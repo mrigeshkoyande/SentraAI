@@ -1,13 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Users, AlertTriangle, ShieldCheck, Clock, TrendingUp, TrendingDown,
-  Activity, Eye, Camera, ChevronRight, ArrowUpRight, ArrowDownRight,
+  Users, AlertTriangle, ShieldCheck, Clock, TrendingUp,
+  Eye, ChevronRight, ArrowUpRight,
   Zap, Shield, AlertCircle, CheckCircle, XCircle, BarChart3
 } from 'lucide-react';
-import { generateDashboardStats, generateVisitors, generateAlerts, getTrustColor, HEATMAP_DATA } from '../data/mockData';
+import { generateDashboardStats, generateVisitors, generateAlerts, getTrustColor } from '../data/mockData';
 import './Dashboard.css';
 
-export default function Dashboard() {
+export default function Dashboard({ userUnit }) {
   const [stats] = useState(generateDashboardStats);
   const [visitors] = useState(() => generateVisitors(8));
   const [alerts] = useState(() => generateAlerts(6));
@@ -15,13 +15,20 @@ export default function Dashboard() {
     totalVisitors: 0, todayVisitors: 0, activeAlerts: 0, pendingApprovals: 0
   });
 
+  // Filter visitors by unit for resident
+  const filteredVisitors = userUnit
+    ? visitors.filter(v => v.unit === userUnit)
+    : visitors;
+
   // Animate counter on mount
   useEffect(() => {
     const targets = {
-      totalVisitors: stats.totalVisitors,
-      todayVisitors: stats.todayVisitors,
+      totalVisitors: userUnit ? filteredVisitors.length : stats.totalVisitors,
+      todayVisitors: userUnit ? Math.min(filteredVisitors.length, 3) : stats.todayVisitors,
       activeAlerts: stats.activeAlerts,
-      pendingApprovals: stats.pendingApprovals,
+      pendingApprovals: userUnit
+        ? filteredVisitors.filter(v => v.status === 'pending').length
+        : stats.pendingApprovals,
     };
     const duration = 1200;
     const steps = 40;
@@ -42,17 +49,16 @@ export default function Dashboard() {
   }, [stats]);
 
   const maxBarValue = Math.max(...stats.monthlyVisitors.map(d => d.count));
-  const maxHourValue = Math.max(...stats.hourlyTraffic.map(d => d.count));
 
   return (
     <div className="dashboard-page">
       {/* Stats Cards */}
       <div className="stats-grid">
         <StatCard
-          title="Total Visitors"
+          title={userUnit ? 'My Visitors' : 'Total Visitors'}
           value={animatedStats.totalVisitors.toLocaleString()}
-          change="+12.5%"
-          trend="up"
+          change={userUnit ? `Unit ${userUnit}` : '+12.5%'}
+          trend={userUnit ? 'neutral' : 'up'}
           icon={<Users size={20} />}
           color="purple"
           index={0}
@@ -60,7 +66,7 @@ export default function Dashboard() {
         <StatCard
           title="Today's Visitors"
           value={animatedStats.todayVisitors}
-          change="+8 from yesterday"
+          change={userUnit ? 'Recent' : '+8 from yesterday'}
           trend="up"
           icon={<Eye size={20} />}
           color="blue"
@@ -86,7 +92,7 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Main Content Grid */}
+      {/* Main Content Grid — Cleaner 2-column */}
       <div className="dashboard-grid">
         {/* Weekly Visitors Chart */}
         <div className="dash-card chart-card animate-fade-in-up stagger-2">
@@ -119,8 +125,38 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Recent Activity Feed */}
+        <div className="dash-card activity-card animate-fade-in-up stagger-3">
+          <div className="card-header">
+            <div>
+              <h3>Live Activity</h3>
+              <p className="card-subtitle">Real-time event feed</p>
+            </div>
+            <div className="live-indicator">
+              <span className="live-dot" />
+              LIVE
+            </div>
+          </div>
+          <div className="activity-list">
+            {stats.recentActivity.slice(0, 6).map((activity, i) => (
+              <div key={i} className="activity-item" style={{ animationDelay: `${i * 0.1}s` }}>
+                <div className={`activity-icon ${activity.type}`}>
+                  {activity.type === 'success' && <CheckCircle size={14} />}
+                  {activity.type === 'info' && <Zap size={14} />}
+                  {activity.type === 'warning' && <AlertTriangle size={14} />}
+                  {activity.type === 'danger' && <XCircle size={14} />}
+                </div>
+                <div className="activity-content">
+                  <p>{activity.event}</p>
+                  <span className="activity-time">{activity.time}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Trust Score Distribution */}
-        <div className="dash-card trust-card animate-fade-in-up stagger-3">
+        <div className="dash-card trust-card animate-fade-in-up stagger-4">
           <div className="card-header">
             <div>
               <h3>Risk Distribution</h3>
@@ -180,131 +216,19 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Recent Activity Feed */}
-        <div className="dash-card activity-card animate-fade-in-up stagger-4">
-          <div className="card-header">
-            <div>
-              <h3>Live Activity</h3>
-              <p className="card-subtitle">Real-time event feed</p>
-            </div>
-            <div className="live-indicator">
-              <span className="live-dot" />
-              LIVE
-            </div>
-          </div>
-          <div className="activity-list">
-            {stats.recentActivity.map((activity, i) => (
-              <div key={i} className="activity-item" style={{ animationDelay: `${i * 0.1}s` }}>
-                <div className={`activity-icon ${activity.type}`}>
-                  {activity.type === 'success' && <CheckCircle size={14} />}
-                  {activity.type === 'info' && <Zap size={14} />}
-                  {activity.type === 'warning' && <AlertTriangle size={14} />}
-                  {activity.type === 'danger' && <XCircle size={14} />}
-                </div>
-                <div className="activity-content">
-                  <p>{activity.event}</p>
-                  <span className="activity-time">{activity.time}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Hourly Traffic */}
-        <div className="dash-card hourly-card animate-fade-in-up stagger-5">
-          <div className="card-header">
-            <div>
-              <h3>Hourly Traffic</h3>
-              <p className="card-subtitle">Visitor flow today</p>
-            </div>
-          </div>
-          <div className="hourly-chart">
-            {stats.hourlyTraffic.map((d, i) => (
-              <div key={d.hour} className="hourly-bar-group" title={`${d.hour}: ${d.count} visitors`}>
-                <div className="hourly-bar-track">
-                  <div
-                    className="hourly-bar-fill"
-                    style={{
-                      height: `${(d.count / maxHourValue) * 100}%`,
-                      animationDelay: `${i * 0.05}s`,
-                      background: d.count > 20
-                        ? 'var(--accent-gradient)'
-                        : d.count > 10
-                          ? 'var(--neon-blue)'
-                          : 'rgba(139, 92, 246, 0.3)'
-                    }}
-                  />
-                </div>
-                <span className="hourly-label">{d.hour.replace('AM', '').replace('PM', '')}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Suspicious Activity Heatmap */}
-        <div className="dash-card heatmap-card animate-fade-in-up stagger-5">
-          <div className="card-header">
-            <div>
-              <h3>Activity Heatmap</h3>
-              <p className="card-subtitle">Suspicious activity patterns</p>
-            </div>
-          </div>
-          <div className="heatmap-container">
-            <div className="heatmap-y-labels">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-                <span key={d}>{d}</span>
-              ))}
-            </div>
-            <div className="heatmap-grid">
-              {HEATMAP_DATA.map((cell, i) => (
-                <div
-                  key={i}
-                  className="heatmap-cell"
-                  style={{
-                    opacity: 0.15 + (cell.value / 10) * 0.85,
-                    background: cell.value > 7 ? 'var(--neon-red)'
-                      : cell.value > 4 ? 'var(--neon-amber)'
-                      : 'var(--accent-primary)'
-                  }}
-                  title={`${cell.day} ${cell.hour}:00 - ${cell.value} incidents`}
-                />
-              ))}
-            </div>
-            <div className="heatmap-x-labels">
-              {Array.from({ length: 24 }, (_, i) => (
-                <span key={i}>{i % 4 === 0 ? `${i}h` : ''}</span>
-              ))}
-            </div>
-          </div>
-          <div className="heatmap-legend">
-            <span>Low</span>
-            <div className="heatmap-scale">
-              {[0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1].map((o, i) => (
-                <div key={i} style={{
-                  background: i > 5 ? 'var(--neon-red)'
-                    : i > 3 ? 'var(--neon-amber)'
-                    : 'var(--accent-primary)',
-                  opacity: o
-                }} />
-              ))}
-            </div>
-            <span>High</span>
-          </div>
-        </div>
-
         {/* Recent Visitors */}
-        <div className="dash-card visitors-card animate-fade-in-up stagger-6">
+        <div className="dash-card visitors-card animate-fade-in-up stagger-5">
           <div className="card-header">
             <div>
-              <h3>Recent Visitors</h3>
-              <p className="card-subtitle">Latest entries</p>
+              <h3>{userUnit ? 'Your Recent Visitors' : 'Recent Visitors'}</h3>
+              <p className="card-subtitle">{userUnit ? `Unit ${userUnit}` : 'Latest entries'}</p>
             </div>
             <button className="card-action-btn" id="view-all-visitors">
               View All <ChevronRight size={14} />
             </button>
           </div>
           <div className="recent-visitors-list">
-            {visitors.slice(0, 5).map((v, i) => {
+            {(userUnit ? filteredVisitors : visitors).slice(0, 5).map((v, i) => {
               const trust = getTrustColor(v.trustLevel);
               return (
                 <div key={v.id} className="visitor-row" style={{ animationDelay: `${i * 0.08}s` }}>
@@ -328,6 +252,12 @@ export default function Dashboard() {
                 </div>
               );
             })}
+            {userUnit && filteredVisitors.length === 0 && (
+              <div className="no-data-message">
+                <Shield size={24} />
+                <p>No visitors for your unit today</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

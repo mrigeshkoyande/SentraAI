@@ -1,16 +1,49 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Bell, AlertTriangle, Shield, CheckCircle, XCircle, Clock,
-  MapPin, User, Filter, BellRing, AlertOctagon, Volume2
+  MapPin, User, Filter, BellRing, AlertOctagon, Volume2, RefreshCw
 } from 'lucide-react';
 import { generateAlerts } from '../data/mockData';
 import './Alerts.css';
 
-export default function Alerts() {
-  const [alerts, setAlerts] = useState(() => generateAlerts(20));
+export default function Alerts({ userUnit }) {
+  const [alerts, setAlerts] = useState(() => {
+    const all = generateAlerts(20);
+    if (userUnit) {
+      // Residents see alerts from non-gate locations (Lobby, Parking, Building C)
+      // plus any unresolved alerts that are unit-relevant
+      const residentLocations = ['Lobby', 'Parking', 'Building C Entry'];
+      const unitAlerts = all.filter(a => residentLocations.includes(a.location) || !a.resolved);
+      // Seed with a few unit-specific ones and limit to 8
+      return unitAlerts.slice(0, 8);
+    }
+    return all;
+  });
   const [filter, setFilter] = useState('all');
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [emergencyModalOpen, setEmergencyModalOpen] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Simulate live polling — increment time display every 30s
+  useEffect(() => {
+    const id = setInterval(() => setLastUpdated(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => {
+      // Re-generate a fresh batch to simulate new data arriving
+      const all = generateAlerts(20);
+      setAlerts(userUnit
+        ? all.filter(a => ['Lobby', 'Parking', 'Building C Entry'].includes(a.location) || !a.resolved).slice(0, 8)
+        : all
+      );
+      setLastUpdated(new Date());
+      setRefreshing(false);
+    }, 600);
+  }, [userUnit]);
 
   const severityConfig = {
     critical: { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', label: 'CRITICAL', icon: <AlertOctagon size={14} /> },
@@ -45,19 +78,40 @@ export default function Alerts() {
       {/* Top Bar */}
       <div className="alerts-topbar">
         <div className="alerts-title-section">
-          <h2>Security Alerts</h2>
-          <div className="alert-counters">
-            <span className="counter unread">
-              <BellRing size={12} /> {unreadCount} unread
-            </span>
-            {criticalCount > 0 && (
-              <span className="counter critical">
-                <AlertOctagon size={12} /> {criticalCount} critical
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <h2>{userUnit ? `Alerts — Unit ${userUnit}` : 'Security Alerts'}</h2>
+            <div className="alerts-live-badge">
+              <span className="alerts-live-dot" />
+              Live
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div className="alert-counters">
+              <span className="counter unread">
+                <BellRing size={12} /> {unreadCount} unread
               </span>
-            )}
+              {criticalCount > 0 && (
+                <span className="counter critical">
+                  <AlertOctagon size={12} /> {criticalCount} critical
+                </span>
+              )}
+            </div>
+            <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)' }}>
+              Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
           </div>
         </div>
         <div className="alerts-actions">
+          <button
+            className="mark-read-btn"
+            onClick={handleRefresh}
+            id="refresh-alerts-btn"
+            title="Refresh alerts"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
+            Refresh
+          </button>
           <button className="mark-read-btn" onClick={markAllRead} id="mark-all-read">
             <CheckCircle size={14} />
             Mark All Read

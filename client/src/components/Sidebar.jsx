@@ -1,33 +1,58 @@
-import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, Users, Camera, Shield, ScrollText, Bell,
-  Settings, ChevronLeft, ChevronRight, LogOut, Zap, Menu
+  ChevronLeft, ChevronRight, LogOut, Zap
 } from 'lucide-react';
 import './Sidebar.css';
 
-const navItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/visitors', label: 'Visitor Entry', icon: Camera },
-  { path: '/approval', label: 'Approvals', icon: Shield },
-  { path: '/logs', label: 'Visitor Logs', icon: ScrollText },
-  { path: '/alerts', label: 'Alerts', icon: Bell, badge: 5 },
-  { path: '/admin', label: 'Admin Panel', icon: Settings },
-];
+const ROLE_LABELS = {
+  admin: 'Administrator',
+  guard: 'Security Guard',
+  resident: 'Resident',
+};
 
-export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
-  const location = useLocation();
+const ROLE_AVATARS = {
+  admin: 'https://randomuser.me/api/portraits/men/32.jpg',
+  guard: 'https://randomuser.me/api/portraits/men/65.jpg',
+  resident: 'https://randomuser.me/api/portraits/women/44.jpg',
+};
+
+export default function Sidebar({
+  collapsed,
+  setCollapsed,
+  mobileOpen,
+  setMobileOpen,
+  navItems = [],
+  user,
+  onLogout,
+  roleAccent = 'purple',
+  dashboardPath = '/admin/dashboard',
+}) {
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    if (onLogout) onLogout();
+    navigate('/');
+  };
+
+  const handleLogoClick = () => {
+    navigate(dashboardPath);
+    setMobileOpen(false);
+  };
+
+  const userName = user?.name || 'User';
+  const userRole = user?.role || 'admin';
+  const roleLabel = ROLE_LABELS[userRole] || 'User';
+  const avatar = ROLE_AVATARS[userRole] || ROLE_AVATARS.admin;
 
   return (
     <>
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div className="sidebar-overlay" onClick={() => setMobileOpen(false)} />
       )}
 
-      <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
-        {/* Logo */}
-        <div className="sidebar-logo">
+      <aside className={`sidebar sidebar-accent-${roleAccent} ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
+        {/* Logo — clickable, navigates to dashboard */}
+        <div className="sidebar-logo" onClick={handleLogoClick} role="button" tabIndex={0}>
           <div className="logo-icon">
             <Zap size={collapsed ? 20 : 24} />
           </div>
@@ -78,17 +103,17 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
         {/* User section */}
         <div className="sidebar-user">
           <div className="user-avatar">
-            <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="Admin" />
+            <img src={avatar} alt={userName} />
             <span className="user-status-dot" />
           </div>
           {!collapsed && (
             <div className="user-info">
-              <span className="user-name">Admin User</span>
-              <span className="user-role">Administrator</span>
+              <span className="user-name">{userName}</span>
+              <span className="user-role">{roleLabel}</span>
             </div>
           )}
           {!collapsed && (
-            <button className="user-logout" title="Logout">
+            <button className="user-logout" title="Logout" onClick={handleLogout}>
               <LogOut size={16} />
             </button>
           )}

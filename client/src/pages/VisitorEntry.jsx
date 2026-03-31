@@ -4,6 +4,7 @@ import {
   CheckCircle, XCircle, Loader, ScanLine, Upload, RefreshCw
 } from 'lucide-react';
 import { VISITOR_NAMES, PURPOSES, UNITS, VISITOR_PHOTOS, generateTrustScore, getTrustColor } from '../data/mockData';
+import VisitorPass from '../components/VisitorPass';
 import './VisitorEntry.css';
 
 export default function VisitorEntry() {
@@ -16,6 +17,7 @@ export default function VisitorEntry() {
   const [result, setResult] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [showPass, setShowPass] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
@@ -397,7 +399,7 @@ export default function VisitorEntry() {
                   <Camera size={16} />
                   New Entry
                 </button>
-                <button className="result-btn secondary" id="print-pass" onClick={() => alert('Pass printed!')}>
+                <button className="result-btn secondary" id="print-pass" onClick={() => setShowPass(true)}>
                   <FileText size={16} />
                   Print Visitor Pass
                 </button>
@@ -406,6 +408,15 @@ export default function VisitorEntry() {
           </div>
         )}
       </div>
+
+      {/* Visitor Pass Modal */}
+      {showPass && result && (
+        <VisitorPass
+          result={result}
+          formData={formData}
+          onClose={() => setShowPass(false)}
+        />
+      )}
     </div>
   );
 }

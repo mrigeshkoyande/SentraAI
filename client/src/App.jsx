@@ -1,82 +1,108 @@
-import { useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import VisitorEntry from './pages/VisitorEntry';
-import Approval from './pages/Approval';
-import Logs from './pages/Logs';
-import Alerts from './pages/Alerts';
-import Admin from './pages/Admin';
+import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import RoleGateway from './pages/RoleGateway';
+import AdminLogin from './pages/admin/AdminLogin';
+import AdminLayout from './pages/admin/AdminLayout';
+import GuardLogin from './pages/guard/GuardLogin';
+import GuardLayout from './pages/guard/GuardLayout';
+import ResidentLogin from './pages/resident/ResidentLogin';
+import ResidentLayout from './pages/resident/ResidentLayout';
 import './App.css';
 
-const PAGE_TITLES = {
-  '/dashboard': { title: 'Dashboard', subtitle: 'Security Overview' },
-  '/visitors': { title: 'Visitor Entry', subtitle: 'Register & Verify Visitors' },
-  '/approval': { title: 'Approvals', subtitle: 'Manage Visitor Access' },
-  '/logs': { title: 'Visitor Logs', subtitle: 'Entry & Exit History' },
-  '/alerts': { title: 'Alerts', subtitle: 'Security Notifications' },
-  '/admin': { title: 'Admin Panel', subtitle: 'System Management' },
-};
-
-function AppLayout({ user, onLogout }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const location = useLocation();
-
-  const pageInfo = PAGE_TITLES[location.pathname] || { title: 'SentraAI', subtitle: '' };
-
-  return (
-    <div className="app-layout">
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        setCollapsed={setSidebarCollapsed}
-        mobileOpen={mobileOpen}
-        setMobileOpen={setMobileOpen}
-      />
-      <div className={`app-main ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-        <Header
-          onMenuClick={() => setMobileOpen(true)}
-          title={pageInfo.title}
-          subtitle={pageInfo.subtitle}
-        />
-        <main className="app-content">
-          <Routes>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/visitors" element={<VisitorEntry />} />
-            <Route path="/approval" element={<Approval />} />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/alerts" element={<Alerts />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </main>
-      </div>
-    </div>
-  );
-}
+const SESSION_KEY = 'sentra-session';
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem(SESSION_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const handleLogin = (userData) => {
     setUser(userData);
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(userData));
+    } catch {
+      // storage unavailable
+    }
   };
 
   const handleLogout = () => {
     setUser(null);
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch {
+      // storage unavailable
+    }
   };
 
   return (
     <BrowserRouter>
-      {!user ? (
-        <Routes>
-          <Route path="*" element={<Login onLogin={handleLogin} />} />
-        </Routes>
-      ) : (
-        <AppLayout user={user} onLogout={handleLogout} />
-      )}
+      <Routes>
+        {/* Gateway — role selector */}
+        <Route path="/" element={<RoleGateway />} />
+        <Route path="/gateway" element={<Navigate to="/" replace />} />
+
+        {/* ===== Admin Domain ===== */}
+        <Route
+          path="/admin/login"
+          element={
+            user?.role === 'admin'
+              ? <Navigate to="/admin/dashboard" replace />
+              : <AdminLogin onLogin={handleLogin} />
+          }
+        />
+        <Route
+          path="/admin/*"
+          element={
+            user?.role === 'admin'
+              ? <AdminLayout user={user} onLogout={handleLogout} />
+              : <Navigate to="/admin/login" replace />
+          }
+        />
+
+        {/* ===== Guard Domain ===== */}
+        <Route
+          path="/guard/login"
+          element={
+            user?.role === 'guard'
+              ? <Navigate to="/guard/dashboard" replace />
+              : <GuardLogin onLogin={handleLogin} />
+          }
+        />
+        <Route
+          path="/guard/*"
+          element={
+            user?.role === 'guard'
+              ? <GuardLayout user={user} onLogout={handleLogout} />
+              : <Navigate to="/guard/login" replace />
+          }
+        />
+
+        {/* ===== Resident Domain ===== */}
+        <Route
+          path="/resident/login"
+          element={
+            user?.role === 'resident'
+              ? <Navigate to="/resident/dashboard" replace />
+              : <ResidentLogin onLogin={handleLogin} />
+          }
+        />
+        <Route
+          path="/resident/*"
+          element={
+            user?.role === 'resident'
+              ? <ResidentLayout user={user} onLogout={handleLogout} />
+              : <Navigate to="/resident/login" replace />
+          }
+        />
+
+        {/* Fallback — redirect old routes to gateway */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </BrowserRouter>
   );
 }

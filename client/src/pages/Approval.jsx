@@ -6,12 +6,14 @@ import {
 import { generateVisitors, getTrustColor, VISITOR_PHOTOS } from '../data/mockData';
 import './Approval.css';
 
-export default function Approval() {
-  const [visitors, setVisitors] = useState(() =>
-    generateVisitors(15).filter(v => v.status === 'pending').slice(0, 6).concat(
+export default function Approval({ userUnit }) {
+  const [visitors, setVisitors] = useState(() => {
+    let all = generateVisitors(15).filter(v => v.status === 'pending').slice(0, 6).concat(
       generateVisitors(15).filter(v => v.status !== 'pending').slice(0, 4)
-    )
-  );
+    );
+    if (userUnit) all = all.filter(v => v.unit === userUnit);
+    return all;
+  });
   const [selectedVisitor, setSelectedVisitor] = useState(null);
   const [otpSent, setOtpSent] = useState({});
   const [otpValues, setOtpValues] = useState({});
@@ -38,8 +40,8 @@ export default function Approval() {
     <div className="approval-page">
       <div className="approval-header">
         <div>
-          <h2>Visitor Approvals</h2>
-          <p>{pendingCount} pending approval{pendingCount !== 1 ? 's' : ''}</p>
+          <h2>{userUnit ? 'Your Visitor Approvals' : 'Visitor Approvals'}</h2>
+          <p>{pendingCount} pending approval{pendingCount !== 1 ? 's' : ''}{userUnit ? ` for Unit ${userUnit}` : ''}</p>
         </div>
         <div className="approval-filter-pills">
           <button className="filter-pill active" id="filter-all">All</button>
