@@ -37,6 +37,7 @@
 .admin-tab.active {
   color: var(--accent-secondary);
   background: rgba(139, 92, 246, 0.12);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.15), inset 0 0 0 1px rgba(139, 92, 246, 0.2);
 }
 
 /* Section */
@@ -177,17 +178,45 @@
 }
 
 .user-card {
-  background: var(--bg-card);
+  background: rgba(15, 15, 35, 0.6);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-lg);
   padding: 18px;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-base);
   animation: fadeInUp 0.4s ease backwards;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+}
+
+.user-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), transparent, rgba(99, 102, 241, 0.1));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 .user-card:hover {
-  border-color: var(--border-accent);
-  transform: translateY(-2px);
+  border-color: rgba(139, 92, 246, 0.35);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 20px rgba(139, 92, 246, 0.1);
+}
+
+[data-theme="light"] .user-card {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .user-card::before {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), transparent, rgba(99, 102, 241, 0.06));
 }
 
 .user-card-top {
@@ -294,16 +323,24 @@
 }
 
 .blacklist-card {
-  background: var(--bg-card);
-  border: 1px solid rgba(248, 113, 113, 0.15);
+  background: rgba(15, 10, 10, 0.65);
+  border: 1px solid rgba(248, 113, 113, 0.2);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-base);
   animation: fadeInUp 0.4s ease backwards;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .blacklist-card:hover {
-  border-color: rgba(248, 113, 113, 0.3);
+  border-color: rgba(248, 113, 113, 0.45);
+  box-shadow: 0 8px 28px rgba(239, 68, 68, 0.12), 0 0 15px rgba(248, 113, 113, 0.08);
+  transform: translateY(-2px);
+}
+
+[data-theme="light"] .blacklist-card {
+  background: rgba(255, 245, 245, 0.9);
 }
 
 .blacklist-card-header {
@@ -396,16 +433,42 @@
 }
 
 .analytics-card {
-  background: var(--bg-card);
+  background: rgba(15, 15, 35, 0.6);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-lg);
   padding: 20px;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-base);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+}
+
+.analytics-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent-gradient);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
 }
 
 .analytics-card:hover {
   border-color: var(--border-accent);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25), 0 0 20px rgba(139, 92, 246, 0.08);
+}
+
+.analytics-card:hover::after {
+  opacity: 1;
+}
+
+[data-theme="light"] .analytics-card {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .analytics-label {
@@ -434,10 +497,17 @@
 .analytics-trend.neutral { color: var(--neon-blue); }
 
 .analytics-chart-card {
-  background: var(--bg-card);
+  background: rgba(15, 15, 35, 0.6);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-lg);
   padding: 24px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+[data-theme="light"] .analytics-chart-card {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .analytics-chart-card h3 {

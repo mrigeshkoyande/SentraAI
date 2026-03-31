@@ -34,6 +34,12 @@
   padding: 20px 20px 24px;
   border-bottom: 1px solid var(--border-subtle);
   min-height: 72px;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.sidebar-logo:hover {
+  opacity: 0.85;
 }
 
 .logo-icon {
@@ -277,6 +283,64 @@
 .user-logout:hover {
   background: rgba(248, 113, 113, 0.1);
   color: var(--neon-red);
+}
+
+/* ===== Role Accent Variants ===== */
+/* Purple (Admin) — default */
+.sidebar-accent-purple .nav-item.active {
+  background: rgba(139, 92, 246, 0.12);
+  color: #a78bfa;
+}
+.sidebar-accent-purple .nav-item.active::before {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+}
+.sidebar-accent-purple .nav-badge {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+}
+.sidebar-accent-purple .logo-icon {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1, #3b82f6);
+}
+
+/* Cyan (Guard) */
+.sidebar-accent-cyan .nav-item.active {
+  background: rgba(34, 211, 238, 0.12);
+  color: #67e8f9;
+}
+.sidebar-accent-cyan .nav-item.active::before {
+  background: linear-gradient(135deg, #22d3ee, #06b6d4);
+}
+.sidebar-accent-cyan .nav-badge {
+  background: linear-gradient(135deg, #22d3ee, #06b6d4);
+}
+.sidebar-accent-cyan .logo-icon {
+  background: linear-gradient(135deg, #22d3ee, #06b6d4);
+}
+.sidebar-accent-cyan .logo-name {
+  background: linear-gradient(135deg, #67e8f9, #22d3ee);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Green (Resident) */
+.sidebar-accent-green .nav-item.active {
+  background: rgba(52, 211, 153, 0.12);
+  color: #6ee7b7;
+}
+.sidebar-accent-green .nav-item.active::before {
+  background: linear-gradient(135deg, #34d399, #10b981);
+}
+.sidebar-accent-green .nav-badge {
+  background: linear-gradient(135deg, #34d399, #10b981);
+}
+.sidebar-accent-green .logo-icon {
+  background: linear-gradient(135deg, #34d399, #10b981);
+}
+.sidebar-accent-green .logo-name {
+  background: linear-gradient(135deg, #6ee7b7, #34d399);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 /* ===== Mobile ===== */
