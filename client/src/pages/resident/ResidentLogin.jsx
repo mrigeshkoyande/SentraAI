@@ -1,39 +1,53 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, Eye, EyeOff, Lock, Mail, ArrowRight, Home, Bell, CheckCircle, Clock } from 'lucide-react';
+import { Zap, Home, Bell, CheckCircle, Clock, Shield, AlertTriangle } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import './ResidentLogin.css';
+import '../GoogleAuth.css';
 
-export default function ResidentLogin({ onLogin }) {
+const GoogleIcon = () => (
+  <svg className="google-icon" width="20" height="20" viewBox="0 0 24 24">
+    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+  </svg>
+);
+
+export default function ResidentLogin() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { loginWithGoogle, user, role, loading, authError } = useAuth();
+  const [signingIn, setSigningIn] = useState(false);
+  const [localError, setLocalError] = useState('');
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!email || !password) {
-      setError('Please fill in all fields');
-      return;
+  useEffect(() => {
+    if (!loading && user && role === 'resident') {
+      navigate('/resident/dashboard', { replace: true });
     }
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 1500));
-    onLogin({ email, role: 'resident', name: 'Resident User', unit: 'A-202' });
-    navigate('/resident/dashboard');
+  }, [user, role, loading, navigate]);
+
+  const handleGoogleLogin = async () => {
+    setLocalError('');
+    setSigningIn(true);
+    try {
+      await loginWithGoogle();
+    } catch (err) {
+      if (err.code === 'auth/popup-closed-by-user') {
+        setLocalError('Sign-in popup was closed. Please try again.');
+      } else {
+        setLocalError('Sign-in failed. Please try again.');
+      }
+    } finally {
+      setSigningIn(false);
+    }
   };
 
-  const handleDemoLogin = async () => {
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-    onLogin({ email: 'resident@sentraai.com', role: 'resident', name: 'Resident User', unit: 'A-202' });
-    navigate('/resident/dashboard');
-  };
+  const displayError = localError ||
+    (authError === 'no_user_record' ? 'Your Google account is not registered as a resident. Contact your building administrator.' : '') ||
+    (authError === 'google_sign_in_failed' ? 'Google sign-in failed. Please try again.' : '');
 
   return (
     <div className="resident-login-page">
-      {/* Animated background */}
       <div className="resident-login-bg">
         <div className="resident-login-grid" />
         <div className="resident-orb resident-orb-1" />
@@ -42,7 +56,7 @@ export default function ResidentLogin({ onLogin }) {
       </div>
 
       <div className="resident-login-container">
-        {/* Left panel — Branding */}
+        {/* Left panel */}
         <div className="resident-branding">
           <div className="resident-branding-content">
             <div className="resident-brand-logo">
@@ -60,7 +74,7 @@ export default function ResidentLogin({ onLogin }) {
             <div className="resident-brand-features">
               <div className="resident-brand-feature">
                 <CheckCircle size={20} />
-                <span>Approve Visitors</span>
+                <span>Approve Visitors via OTP</span>
               </div>
               <div className="resident-brand-feature">
                 <Bell size={20} />
@@ -88,86 +102,47 @@ export default function ResidentLogin({ onLogin }) {
           </div>
         </div>
 
-        {/* Right panel — Login Form */}
+        {/* Right panel */}
         <div className="resident-form-panel">
           <div className="resident-form-container">
             <div className="resident-form-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <Home size={20} color="#fff" />
+                </div>
+              </div>
               <h2>Resident Sign In</h2>
               <p>Access your visitor management portal</p>
             </div>
 
-            {error && (
-              <div className="resident-login-error">
-                <span>⚠️</span> {error}
+            {displayError && (
+              <div className="auth-access-denied">
+                <strong><AlertTriangle size={14} /> Access Denied</strong>
+                <p>{displayError}</p>
               </div>
             )}
 
-            <form onSubmit={handleLogin} className="resident-login-form">
-              <div className="resident-form-group">
-                <label htmlFor="resident-login-email">Email Address</label>
-                <div className="resident-input-wrapper">
-                  <Mail size={16} />
-                  <input
-                    id="resident-login-email"
-                    type="email"
-                    placeholder="resident@sentraai.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-              </div>
+            <div className="auth-redirect-notice" style={{ borderColor: 'rgba(16, 185, 129, 0.3)', background: 'rgba(16, 185, 129, 0.08)' }}>
+              <Shield size={14} color="#10b981" />
+              <span>Secured with Firebase Authentication + Google OAuth 2.0</span>
+            </div>
 
-              <div className="resident-form-group">
-                <label htmlFor="resident-login-password">Password</label>
-                <div className="resident-input-wrapper">
-                  <Lock size={16} />
-                  <input
-                    id="resident-login-password"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="resident-toggle-password"
-                    onClick={() => setShowPassword(!showPassword)}
-                    id="resident-toggle-password-btn"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className={`resident-submit-btn ${loading ? 'loading' : ''}`}
-                disabled={loading}
-                id="resident-login-submit"
-              >
-                {loading ? (
-                  <div className="resident-btn-spinner" />
-                ) : (
-                  <>
-                    Sign In to Resident Portal
-                    <ArrowRight size={18} />
-                  </>
-                )}
-              </button>
-            </form>
-
-            <div className="resident-login-divider">
-              <span>Quick Demo Access</span>
+            <div className="auth-divider">
+              <span>Sign in to continue</span>
             </div>
 
             <button
-              className="resident-demo-btn"
-              onClick={handleDemoLogin}
-              disabled={loading}
-              id="resident-demo-login"
+              id="resident-google-signin"
+              className="google-signin-btn"
+              onClick={handleGoogleLogin}
+              disabled={signingIn || loading}
             >
-              <Home size={16} />
-              Launch Resident Demo
+              {signingIn ? <div className="google-btn-spinner" /> : <GoogleIcon />}
+              <span>{signingIn ? 'Signing in…' : 'Continue with Google'}</span>
             </button>
 
             <div className="resident-back-link">
