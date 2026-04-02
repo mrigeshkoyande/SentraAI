@@ -12,40 +12,42 @@ import Analytics from '../Analytics';
 import Settings from '../Settings';
 import About from '../About';
 import useTheme from '../../hooks/useTheme';
+import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard, Camera, Shield, ScrollText, Bell,
   Settings as SettingsIcon, Info, Wrench, BarChart2
 } from 'lucide-react';
 
 const ADMIN_NAV_ITEMS = [
-  { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/admin/visitors', label: 'Visitor Entry', icon: Camera },
-  { path: '/admin/approval', label: 'Approvals', icon: Shield },
-  { path: '/admin/logs', label: 'Visitor Logs', icon: ScrollText },
-  { path: '/admin/alerts', label: 'Alerts', icon: Bell, badge: 5 },
-  { path: '/admin/analytics', label: 'Analytics', icon: BarChart2 },
-  { path: '/admin/admin-panel', label: 'Admin Panel', icon: Wrench },
-  { path: '/admin/settings', label: 'Settings', icon: SettingsIcon },
-  { path: '/admin/about', label: 'About', icon: Info },
+  { path: '/admin/dashboard',   label: 'Dashboard',   icon: LayoutDashboard },
+  { path: '/admin/visitors',    label: 'Visitor Entry',icon: Camera },
+  { path: '/admin/approval',    label: 'Approvals',   icon: Shield },
+  { path: '/admin/logs',        label: 'Visitor Logs', icon: ScrollText },
+  { path: '/admin/alerts',      label: 'Alerts',       icon: Bell },
+  { path: '/admin/analytics',   label: 'Analytics',   icon: BarChart2 },
+  { path: '/admin/admin-panel', label: 'Admin Panel',  icon: Wrench },
+  { path: '/admin/settings',    label: 'Settings',    icon: SettingsIcon },
+  { path: '/admin/about',       label: 'About',        icon: Info },
 ];
 
 const ADMIN_PAGE_TITLES = {
-  '/admin/dashboard': { title: 'Dashboard', subtitle: 'Security Overview' },
-  '/admin/visitors': { title: 'Visitor Entry', subtitle: 'Register & Verify Visitors' },
-  '/admin/approval': { title: 'Approvals', subtitle: 'Manage Visitor Access' },
-  '/admin/logs': { title: 'Visitor Logs', subtitle: 'Entry & Exit History' },
-  '/admin/alerts': { title: 'Alerts', subtitle: 'Security Notifications' },
-  '/admin/analytics': { title: 'Analytics', subtitle: 'Trends & Insights' },
-  '/admin/admin-panel': { title: 'Admin Panel', subtitle: 'System Management' },
-  '/admin/settings': { title: 'Settings', subtitle: 'Preferences & Configuration' },
-  '/admin/about': { title: 'About', subtitle: 'Application Information' },
+  '/admin/dashboard':   { title: 'Dashboard',   subtitle: 'Security Overview' },
+  '/admin/visitors':    { title: 'Visitor Entry', subtitle: 'Register & Verify Visitors' },
+  '/admin/approval':    { title: 'Approvals',    subtitle: 'Manage Visitor Access' },
+  '/admin/logs':        { title: 'Visitor Logs', subtitle: 'Entry & Exit History' },
+  '/admin/alerts':      { title: 'Alerts',       subtitle: 'Security Notifications' },
+  '/admin/analytics':   { title: 'Analytics',    subtitle: 'Trends & Insights' },
+  '/admin/admin-panel': { title: 'Admin Panel',  subtitle: 'System Management' },
+  '/admin/settings':    { title: 'Settings',     subtitle: 'Preferences & Configuration' },
+  '/admin/about':       { title: 'About',        subtitle: 'Application Information' },
 };
 
-export default function AdminLayout({ user, onLogout }) {
+export default function AdminLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const { theme, toggleTheme } = useTheme('admin');
+  const { user, logout } = useAuth();
 
   const pageInfo = ADMIN_PAGE_TITLES[location.pathname] || { title: 'SentraAI', subtitle: '' };
 
@@ -58,7 +60,7 @@ export default function AdminLayout({ user, onLogout }) {
         setMobileOpen={setMobileOpen}
         navItems={ADMIN_NAV_ITEMS}
         user={user}
-        onLogout={onLogout}
+        onLogout={logout}
         roleAccent="purple"
         dashboardPath="/admin/dashboard"
       />
@@ -67,21 +69,20 @@ export default function AdminLayout({ user, onLogout }) {
           onMenuClick={() => setMobileOpen(true)}
           title={pageInfo.title}
           subtitle={pageInfo.subtitle}
-          user={user}
           role="admin"
         />
         <main className="app-content">
           <Routes>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/visitors" element={<VisitorEntry />} />
-            <Route path="/approval" element={<Approval />} />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/alerts" element={<Alerts />} />
-            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/dashboard"   element={<Dashboard />} />
+            <Route path="/visitors"    element={<VisitorEntry role="admin" />} />
+            <Route path="/approval"    element={<Approval />} />
+            <Route path="/logs"        element={<Logs />} />
+            <Route path="/alerts"      element={<Alerts />} />
+            <Route path="/analytics"   element={<Analytics />} />
             <Route path="/admin-panel" element={<Admin />} />
-            <Route path="/settings" element={<Settings theme={theme} toggleTheme={toggleTheme} user={user} />} />
-            <Route path="/about" element={<About />} />
-            <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+            <Route path="/settings"    element={<Settings theme={theme} toggleTheme={toggleTheme} user={user} />} />
+            <Route path="/about"       element={<About />} />
+            <Route path="*"            element={<Navigate to="/admin/dashboard" replace />} />
           </Routes>
         </main>
       </div>
