@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken, supabaseAdmin } = require('../middleware/auth');
+const { verifyToken, verifyFirebaseOnly, supabaseAdmin } = require('../middleware/auth');
 
 /**
  * POST /api/auth/profile
  * Called after Google sign-in to sync firebase_uid with Supabase user record.
  * If the email exists without a firebase_uid (admin pre-provisioned), it links them.
  */
-router.post('/profile', verifyToken, async (req, res) => {
+router.post('/profile', verifyFirebaseOnly, async (req, res) => {
   const { uid, email } = req.firebaseUser;
 
   // Try to find by firebase_uid first
@@ -24,8 +24,35 @@ router.post('/profile', verifyToken, async (req, res) => {
     return res.json({ user: updated });
   }
 
-  // No record at all
-  return res.status(403).json({ error: 'Account not provisioned. Contact your administrator.' });
+  // If no record at all, auto-register the user!
+  // First user ever → admin. Otherwise use the intendedRole from the portal they signed into.
+  const { count } = await supabaseAdmin.from('users').select('*', { count: 'exact', head: true });
+  const allowedRoles = ['admin', 'guard', 'resident'];
+  const intendedRole = req.body?.intendedRole;
+  const newRole = count === 0 ? 'admin' : (allowedRoles.includes(intendedRole) ? intendedRole : 'resident');
+
+  // Use Google display name if available, fallback to email prefix
+  const displayName = req.body?.displayName || email.split('@')[0];
+
+  const { data: newUser, error: insertError } = await supabaseAdmin.from('users')
+    .insert({
+      firebase_uid: uid,
+      email: email,
+      name: displayName,
+      role: newRole,
+      status: 'active',
+      avatar_url: req.body?.photoURL || null
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    console.error('Registration error:', insertError);
+    return res.status(500).json({ error: 'Failed to auto-register user.' });
+  }
+
+  console.log(`✅ New user registered: ${email} as ${newRole}`);
+  return res.json({ user: newUser });
 });
 
 // GET /api/auth/me — returns the calling user's full profile

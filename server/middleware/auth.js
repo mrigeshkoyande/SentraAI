@@ -41,7 +41,27 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'https://YOUR_PROJE
 }
 
 /**
- * verifyToken — validates Firebase ID token from Authorization header.
+ * verifyFirebaseOnly — validates Firebase ID token ONLY.
+ * Does NOT require a Supabase record. Used for the registration/profile-sync endpoint.
+ * Attaches req.firebaseUser (uid, email)
+ */
+async function verifyFirebaseOnly(req, res, next) {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    }
+    const token = auth.split('Bearer ')[1];
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.firebaseUser = { uid: decoded.uid, email: decoded.email };
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired Firebase token' });
+  }
+}
+
+/**
+ * verifyToken — validates Firebase ID token AND requires existing Supabase profile.
  * Attaches req.firebaseUser  (uid, email)
  * Attaches req.user          (full Supabase profile row)
  */
@@ -88,4 +108,4 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { verifyToken, requireRole, supabaseAdmin };
+module.exports = { verifyToken, verifyFirebaseOnly, requireRole, supabaseAdmin };

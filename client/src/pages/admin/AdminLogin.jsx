@@ -32,8 +32,8 @@ export default function AdminLogin() {
     setLocalError('');
     setSigningIn(true);
     try {
-      await loginWithGoogle();
-      // Navigation handled by useEffect above once role is confirmed
+      await loginWithGoogle('admin');
+      // Navigation handled by useEffect once role confirmed
     } catch (err) {
       if (err.code === 'auth/popup-closed-by-user') {
         setLocalError('Sign-in popup was closed. Please try again.');
@@ -47,7 +47,9 @@ export default function AdminLogin() {
 
   const displayError = localError ||
     (authError === 'no_user_record' ? 'Your Google account does not have admin access. Contact your system administrator.' : '') ||
-    (authError === 'google_sign_in_failed' ? 'Google sign-in failed. Please try again.' : '');
+    (authError === 'google_sign_in_failed' ? 'Google sign-in failed. Please try again.' : '') ||
+    (authError === 'fetch_error' ? 'Could not connect to server. Make sure the server is running.' : '') ||
+    (authError ? `Error: ${authError}` : '');
 
   return (
     <div className="admin-login-page">

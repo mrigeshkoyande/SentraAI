@@ -1,34 +1,66 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Users, AlertTriangle, ShieldCheck, Clock, TrendingUp,
   Eye, ChevronRight, ArrowUpRight,
-  Zap, Shield, AlertCircle, CheckCircle, XCircle, BarChart3
+  Zap, Shield, AlertCircle, CheckCircle, XCircle, BarChart3,
+  RefreshCw, WifiOff
 } from 'lucide-react';
-import { generateDashboardStats, generateVisitors, generateAlerts, getTrustColor } from '../data/mockData';
+import { getTrustColor } from '../data/mockData';
+import { useAuth } from '../context/AuthContext';
 import './Dashboard.css';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
 export default function Dashboard({ userUnit }) {
-  const [stats] = useState(generateDashboardStats);
-  const [visitors] = useState(() => generateVisitors(8));
-  const [alerts] = useState(() => generateAlerts(6));
+  const { getIdToken, user } = useAuth();
+
+  // Real data state
+  const [visitors, setVisitors] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   const [animatedStats, setAnimatedStats] = useState({
     totalVisitors: 0, todayVisitors: 0, activeAlerts: 0, pendingApprovals: 0
   });
 
-  // Filter visitors by unit for resident
-  const filteredVisitors = userUnit
-    ? visitors.filter(v => v.unit === userUnit)
-    : visitors;
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const headers = { Authorization: `Bearer ${token}` };
 
-  // Animate counter on mount
+      const [visRes, statsRes] = await Promise.all([
+        fetch(`${API}/api/visitors?limit=8`, { headers }),
+        fetch(`${API}/api/admin/stats`, { headers }),
+      ]);
+
+      const visData  = await visRes.json();
+      const statData = statsRes.ok ? await statsRes.json() : null;
+
+      setVisitors(visData.visitors || []);
+      setStats(statData?.stats || null);
+    } catch (e) {
+      setError('Could not reach server. Is the backend running?');
+    } finally {
+      setLoading(false);
+    }
+  }, [getIdToken]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Animate counters when stats load
   useEffect(() => {
+    if (!stats && visitors.length === 0) return;
     const targets = {
-      totalVisitors: userUnit ? filteredVisitors.length : stats.totalVisitors,
-      todayVisitors: userUnit ? Math.min(filteredVisitors.length, 3) : stats.todayVisitors,
-      activeAlerts: stats.activeAlerts,
-      pendingApprovals: userUnit
-        ? filteredVisitors.filter(v => v.status === 'pending').length
-        : stats.pendingApprovals,
+      totalVisitors:    stats?.total_visitors   ?? visitors.length,
+      todayVisitors:    stats?.today_visitors   ?? visitors.filter(v => {
+        const d = new Date(v.created_at || v.entry_time);
+        return d.toDateString() === new Date().toDateString();
+      }).length,
+      activeAlerts:     stats?.active_alerts    ?? 0,
+      pendingApprovals: stats?.pending_approvals ?? visitors.filter(v => v.status === 'pending').length,
     };
     const duration = 1200;
     const steps = 40;
@@ -38,17 +70,58 @@ export default function Dashboard({ userUnit }) {
       const progress = step / steps;
       const eased = 1 - Math.pow(1 - progress, 3);
       setAnimatedStats({
-        totalVisitors: Math.round(targets.totalVisitors * eased),
-        todayVisitors: Math.round(targets.todayVisitors * eased),
-        activeAlerts: Math.round(targets.activeAlerts * eased),
+        totalVisitors:    Math.round(targets.totalVisitors * eased),
+        todayVisitors:    Math.round(targets.todayVisitors * eased),
+        activeAlerts:     Math.round(targets.activeAlerts * eased),
         pendingApprovals: Math.round(targets.pendingApprovals * eased),
       });
       if (step >= steps) clearInterval(interval);
     }, duration / steps);
     return () => clearInterval(interval);
-  }, [stats]);
+  }, [stats, visitors]);
 
-  const maxBarValue = Math.max(...stats.monthlyVisitors.map(d => d.count));
+  // Weekly chart — derive from real visitors if no stats
+  const weeklyData = stats?.weekly_visitors || (() => {
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const counts = { Mon:0,Tue:0,Wed:0,Thu:0,Fri:0,Sat:0,Sun:0 };
+    visitors.forEach(v => {
+      const d = new Date(v.created_at || v.entry_time);
+      const label = days[d.getDay()];
+      if (counts[label] !== undefined) counts[label]++;
+    });
+    return Object.entries(counts).map(([day,count]) => ({ day, count }));
+  })();
+
+  const maxBarValue = Math.max(...weeklyData.map(d => d.count), 1);
+
+  // Risk distribution derived from real visitors
+  const riskDist = {
+    low:    visitors.filter(v => v.trust_level === 'Low').length,
+    medium: visitors.filter(v => v.trust_level === 'Medium').length,
+    high:   visitors.filter(v => v.trust_level === 'High').length,
+  };
+  const totalRisk = riskDist.low + riskDist.medium + riskDist.high || 1;
+
+  if (loading) return (
+    <div className="dashboard-page" style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight: 400 }}>
+      <div style={{ textAlign:'center', color:'rgba(255,255,255,0.5)' }}>
+        <RefreshCw size={32} style={{ animation:'spin 1s linear infinite', marginBottom:12 }} />
+        <p>Loading dashboard…</p>
+      </div>
+    </div>
+  );
+
+  if (error) return (
+    <div className="dashboard-page" style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight: 400 }}>
+      <div style={{ textAlign:'center', color:'rgba(255,255,255,0.5)' }}>
+        <WifiOff size={36} style={{ marginBottom:12, color:'#f87171' }} />
+        <p style={{ color:'#f87171', marginBottom:8 }}>{error}</p>
+        <button onClick={fetchData} style={{ padding:'8px 20px', borderRadius:8, background:'rgba(139,92,246,0.2)', border:'1px solid rgba(139,92,246,0.3)', color:'#a78bfa', cursor:'pointer' }}>
+          Retry
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="dashboard-page">
@@ -57,7 +130,7 @@ export default function Dashboard({ userUnit }) {
         <StatCard
           title={userUnit ? 'My Visitors' : 'Total Visitors'}
           value={animatedStats.totalVisitors.toLocaleString()}
-          change={userUnit ? `Unit ${userUnit}` : '+12.5%'}
+          change={userUnit ? `Unit ${userUnit}` : 'All time'}
           trend={userUnit ? 'neutral' : 'up'}
           icon={<Users size={20} />}
           color="purple"
@@ -66,7 +139,7 @@ export default function Dashboard({ userUnit }) {
         <StatCard
           title="Today's Visitors"
           value={animatedStats.todayVisitors}
-          change={userUnit ? 'Recent' : '+8 from yesterday'}
+          change="Today"
           trend="up"
           icon={<Eye size={20} />}
           color="blue"
@@ -75,7 +148,7 @@ export default function Dashboard({ userUnit }) {
         <StatCard
           title="Active Alerts"
           value={animatedStats.activeAlerts}
-          change="2 critical"
+          change={animatedStats.activeAlerts > 0 ? 'Needs attention' : 'All clear'}
           trend="alert"
           icon={<AlertTriangle size={20} />}
           color="red"
@@ -84,7 +157,7 @@ export default function Dashboard({ userUnit }) {
         <StatCard
           title="Pending Approvals"
           value={animatedStats.pendingApprovals}
-          change="Action needed"
+          change={animatedStats.pendingApprovals > 0 ? 'Action needed' : 'None pending'}
           trend="neutral"
           icon={<Clock size={20} />}
           color="amber"
@@ -92,7 +165,7 @@ export default function Dashboard({ userUnit }) {
         />
       </div>
 
-      {/* Main Content Grid — Cleaner 2-column */}
+      {/* Main Content Grid */}
       <div className="dashboard-grid">
         {/* Weekly Visitors Chart */}
         <div className="dash-card chart-card animate-fade-in-up stagger-2">
@@ -103,11 +176,11 @@ export default function Dashboard({ userUnit }) {
             </div>
             <div className="card-header-badge">
               <BarChart3 size={14} />
-              <span>{stats.weeklyChange}</span>
+              <span>Live data</span>
             </div>
           </div>
           <div className="bar-chart">
-            {stats.monthlyVisitors.map((d, i) => (
+            {weeklyData.map((d, i) => (
               <div key={d.day} className="bar-group">
                 <div className="bar-value">{d.count}</div>
                 <div className="bar-track">
@@ -125,7 +198,7 @@ export default function Dashboard({ userUnit }) {
           </div>
         </div>
 
-        {/* Recent Activity Feed */}
+        {/* Recent Activity Feed — derived from real visitor entries */}
         <div className="dash-card activity-card animate-fade-in-up stagger-3">
           <div className="card-header">
             <div>
@@ -138,24 +211,39 @@ export default function Dashboard({ userUnit }) {
             </div>
           </div>
           <div className="activity-list">
-            {stats.recentActivity.slice(0, 6).map((activity, i) => (
-              <div key={i} className="activity-item" style={{ animationDelay: `${i * 0.1}s` }}>
-                <div className={`activity-icon ${activity.type}`}>
-                  {activity.type === 'success' && <CheckCircle size={14} />}
-                  {activity.type === 'info' && <Zap size={14} />}
-                  {activity.type === 'warning' && <AlertTriangle size={14} />}
-                  {activity.type === 'danger' && <XCircle size={14} />}
-                </div>
-                <div className="activity-content">
-                  <p>{activity.event}</p>
-                  <span className="activity-time">{activity.time}</span>
-                </div>
+            {visitors.slice(0, 6).length === 0 ? (
+              <div style={{ textAlign:'center', padding:'2rem', color:'rgba(255,255,255,0.3)' }}>
+                <Shield size={28} style={{ marginBottom: 8 }} />
+                <p>No activity yet</p>
               </div>
-            ))}
+            ) : visitors.slice(0, 6).map((v, i) => {
+              const type = v.status === 'approved' ? 'success' : v.status === 'denied' ? 'danger' : 'info';
+              const event = v.status === 'approved'
+                ? `${v.name} approved for ${v.target_flat || 'N/A'}`
+                : v.status === 'denied'
+                ? `${v.name} denied entry`
+                : `${v.name} pending approval at ${v.target_flat || 'N/A'}`;
+              const when = new Date(v.created_at || v.entry_time);
+              const diff = Math.round((Date.now() - when.getTime()) / 60000);
+              const timeStr = diff < 1 ? 'just now' : diff < 60 ? `${diff} min ago` : new Date(when).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+              return (
+                <div key={v.id} className="activity-item" style={{ animationDelay: `${i * 0.1}s` }}>
+                  <div className={`activity-icon ${type}`}>
+                    {type === 'success' && <CheckCircle size={14} />}
+                    {type === 'info'    && <Zap size={14} />}
+                    {type === 'danger'  && <XCircle size={14} />}
+                  </div>
+                  <div className="activity-content">
+                    <p>{event}</p>
+                    <span className="activity-time">{timeStr}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Trust Score Distribution */}
+        {/* Risk Distribution */}
         <div className="dash-card trust-card animate-fade-in-up stagger-4">
           <div className="card-header">
             <div>
@@ -163,57 +251,64 @@ export default function Dashboard({ userUnit }) {
               <p className="card-subtitle">AI Trust Score analysis</p>
             </div>
           </div>
-          <div className="trust-visual">
-            <div className="trust-ring">
-              <svg viewBox="0 0 120 120">
-                <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="12" />
-                <circle
-                  cx="60" cy="60" r="52" fill="none" stroke="var(--status-safe)" strokeWidth="12"
-                  strokeDasharray={`${stats.riskDistribution.low * 3.27} 327`}
-                  strokeDashoffset="0" strokeLinecap="round"
-                  transform="rotate(-90 60 60)"
-                  className="ring-segment"
-                />
-                <circle
-                  cx="60" cy="60" r="52" fill="none" stroke="var(--status-warning)" strokeWidth="12"
-                  strokeDasharray={`${stats.riskDistribution.medium * 3.27} 327`}
-                  strokeDashoffset={`-${stats.riskDistribution.low * 3.27}`}
-                  strokeLinecap="round"
-                  transform="rotate(-90 60 60)"
-                  className="ring-segment"
-                />
-                <circle
-                  cx="60" cy="60" r="52" fill="none" stroke="var(--status-danger)" strokeWidth="12"
-                  strokeDasharray={`${stats.riskDistribution.high * 3.27} 327`}
-                  strokeDashoffset={`-${(stats.riskDistribution.low + stats.riskDistribution.medium) * 3.27}`}
-                  strokeLinecap="round"
-                  transform="rotate(-90 60 60)"
-                  className="ring-segment"
-                />
-              </svg>
-              <div className="trust-ring-center">
-                <span className="trust-ring-value">{stats.avgTrustScore}</span>
-                <span className="trust-ring-label">Avg Score</span>
+          {visitors.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'3rem 1rem', color:'rgba(255,255,255,0.3)' }}>
+              <Shield size={32} style={{ marginBottom: 8 }} />
+              <p>No visitor data yet</p>
+            </div>
+          ) : (
+            <div className="trust-visual">
+              <div className="trust-ring">
+                <svg viewBox="0 0 120 120">
+                  <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="12" />
+                  <circle
+                    cx="60" cy="60" r="52" fill="none" stroke="var(--status-safe)" strokeWidth="12"
+                    strokeDasharray={`${(riskDist.low / totalRisk) * 327} 327`}
+                    strokeDashoffset="0" strokeLinecap="round"
+                    transform="rotate(-90 60 60)"
+                    className="ring-segment"
+                  />
+                  <circle
+                    cx="60" cy="60" r="52" fill="none" stroke="var(--status-warning)" strokeWidth="12"
+                    strokeDasharray={`${(riskDist.medium / totalRisk) * 327} 327`}
+                    strokeDashoffset={`-${(riskDist.low / totalRisk) * 327}`}
+                    strokeLinecap="round"
+                    transform="rotate(-90 60 60)"
+                    className="ring-segment"
+                  />
+                  <circle
+                    cx="60" cy="60" r="52" fill="none" stroke="var(--status-danger)" strokeWidth="12"
+                    strokeDasharray={`${(riskDist.high / totalRisk) * 327} 327`}
+                    strokeDashoffset={`-${((riskDist.low + riskDist.medium) / totalRisk) * 327}`}
+                    strokeLinecap="round"
+                    transform="rotate(-90 60 60)"
+                    className="ring-segment"
+                  />
+                </svg>
+                <div className="trust-ring-center">
+                  <span className="trust-ring-value">{visitors.length}</span>
+                  <span className="trust-ring-label">Visitors</span>
+                </div>
+              </div>
+              <div className="trust-legend">
+                <div className="legend-item">
+                  <span className="legend-dot" style={{ background: 'var(--status-safe)' }} />
+                  <span className="legend-label">Low Risk</span>
+                  <span className="legend-value">{Math.round((riskDist.low / totalRisk) * 100)}%</span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot" style={{ background: 'var(--status-warning)' }} />
+                  <span className="legend-label">Medium Risk</span>
+                  <span className="legend-value">{Math.round((riskDist.medium / totalRisk) * 100)}%</span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot" style={{ background: 'var(--status-danger)' }} />
+                  <span className="legend-label">High Risk</span>
+                  <span className="legend-value">{Math.round((riskDist.high / totalRisk) * 100)}%</span>
+                </div>
               </div>
             </div>
-            <div className="trust-legend">
-              <div className="legend-item">
-                <span className="legend-dot" style={{ background: 'var(--status-safe)' }} />
-                <span className="legend-label">Low Risk</span>
-                <span className="legend-value">{stats.riskDistribution.low}%</span>
-              </div>
-              <div className="legend-item">
-                <span className="legend-dot" style={{ background: 'var(--status-warning)' }} />
-                <span className="legend-label">Medium Risk</span>
-                <span className="legend-value">{stats.riskDistribution.medium}%</span>
-              </div>
-              <div className="legend-item">
-                <span className="legend-dot" style={{ background: 'var(--status-danger)' }} />
-                <span className="legend-label">High Risk</span>
-                <span className="legend-value">{stats.riskDistribution.high}%</span>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Recent Visitors */}
@@ -228,36 +323,40 @@ export default function Dashboard({ userUnit }) {
             </button>
           </div>
           <div className="recent-visitors-list">
-            {(userUnit ? filteredVisitors : visitors).slice(0, 5).map((v, i) => {
-              const trust = getTrustColor(v.trustLevel);
+            {visitors.length === 0 ? (
+              <div className="no-data-message">
+                <Shield size={24} />
+                <p>No visitors logged yet</p>
+              </div>
+            ) : visitors.slice(0, 5).map((v, i) => {
+              const trust = getTrustColor(v.trust_level);
               return (
                 <div key={v.id} className="visitor-row" style={{ animationDelay: `${i * 0.08}s` }}>
                   <div className="visitor-avatar-sm">
-                    <img src={v.photo} alt={v.name} />
+                    {v.photo_url
+                      ? <img src={v.photo_url} alt={v.name} />
+                      : <div style={{ width:36, height:36, borderRadius:'50%', background:'rgba(139,92,246,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, color:'#a78bfa' }}>
+                          {v.name?.[0]?.toUpperCase() || '?'}
+                        </div>
+                    }
                   </div>
                   <div className="visitor-info-sm">
                     <span className="visitor-name-sm">{v.name}</span>
                     <span className="visitor-purpose-sm">{v.purpose}</span>
                   </div>
-                  <div className="visitor-unit-sm">{v.unit}</div>
+                  <div className="visitor-unit-sm">{v.target_flat || '—'}</div>
                   <div className="visitor-trust-sm" style={{ color: trust.color, background: trust.bg }}>
-                    {v.trustScore}
+                    {v.trust_score ?? '—'}
                   </div>
                   <div className={`visitor-status-sm ${v.status}`}>
                     {v.status === 'approved' && <CheckCircle size={12} />}
-                    {v.status === 'pending' && <Clock size={12} />}
-                    {v.status === 'denied' && <XCircle size={12} />}
+                    {v.status === 'pending'  && <Clock size={12} />}
+                    {v.status === 'denied'   && <XCircle size={12} />}
                     {v.status}
                   </div>
                 </div>
               );
             })}
-            {userUnit && filteredVisitors.length === 0 && (
-              <div className="no-data-message">
-                <Shield size={24} />
-                <p>No visitors for your unit today</p>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -268,9 +367,9 @@ export default function Dashboard({ userUnit }) {
 function StatCard({ title, value, change, trend, icon, color, index }) {
   const colorMap = {
     purple: { bg: 'rgba(139, 92, 246, 0.1)', border: 'rgba(139, 92, 246, 0.2)', text: '#a78bfa', icon: 'var(--accent-gradient)' },
-    blue: { bg: 'rgba(59, 130, 246, 0.1)', border: 'rgba(59, 130, 246, 0.2)', text: '#60a5fa', icon: 'linear-gradient(135deg, #3b82f6, #60a5fa)' },
-    red: { bg: 'rgba(248, 113, 113, 0.1)', border: 'rgba(248, 113, 113, 0.2)', text: '#f87171', icon: 'linear-gradient(135deg, #ef4444, #f87171)' },
-    amber: { bg: 'rgba(251, 191, 36, 0.1)', border: 'rgba(251, 191, 36, 0.2)', text: '#fbbf24', icon: 'linear-gradient(135deg, #f59e0b, #fbbf24)' },
+    blue:   { bg: 'rgba(59, 130, 246, 0.1)',  border: 'rgba(59, 130, 246, 0.2)',  text: '#60a5fa', icon: 'linear-gradient(135deg, #3b82f6, #60a5fa)' },
+    red:    { bg: 'rgba(248, 113, 113, 0.1)', border: 'rgba(248, 113, 113, 0.2)', text: '#f87171', icon: 'linear-gradient(135deg, #ef4444, #f87171)' },
+    amber:  { bg: 'rgba(251, 191, 36, 0.1)',  border: 'rgba(251, 191, 36, 0.2)',  text: '#fbbf24', icon: 'linear-gradient(135deg, #f59e0b, #fbbf24)' },
   };
   const c = colorMap[color];
 

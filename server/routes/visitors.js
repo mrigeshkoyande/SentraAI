@@ -41,22 +41,27 @@ router.get('/:id', verifyToken, async (req, res) => {
 
 // POST /api/visitors — guard logs a new visitor
 router.post('/', verifyToken, requireRole('guard'), async (req, res) => {
-  const { name, phone, purpose, target_flat, target_resident_id, photo_url, trust_score, trust_level, face_match } = req.body;
+  const { name, phone, purpose, target_flat, target_resident_id, photo_url, trust_score, trust_level, captured_at, captured_by_guard_id } = req.body;
   if (!name || !target_flat) return res.status(400).json({ error: 'name and target_flat are required' });
 
   const score = trust_score ?? Math.floor(Math.random() * 60) + 40;
   const level = trust_level ?? (score >= 75 ? 'Low' : score >= 45 ? 'Medium' : 'High');
-  const match = face_match ?? Math.floor(Math.random() * 15) + 85;
+
+  // Generate unique visitor ID: VIS-{PHONE_LAST6}-{UNIX_TS}
+  const phoneSuffix = phone ? phone.replace(/\D/g, '').slice(-6).padStart(6, '0') : 'XXXXXX';
+  const visitorUniqueId = `VIS-${phoneSuffix}-${Date.now()}`;
 
   // Create visitor record
   const { data: visitor, error: vErr } = await supabaseAdmin.from('visitors').insert({
     name, phone, purpose, target_flat, target_resident_id,
     photo_url: photo_url || null,
-    trust_score: score, trust_level: level, face_match: match,
+    trust_score: score, trust_level: level,
     status: level === 'High' ? 'denied' : 'pending',
     logged_by: req.user.id,
     viewed_by_resident: false,
     entry_time: new Date().toISOString(),
+    visitor_unique_id: visitorUniqueId,
+    captured_at: captured_at || null,
   }).select().single();
   if (vErr) return res.status(500).json({ error: vErr.message });
 
@@ -101,16 +106,25 @@ router.post('/', verifyToken, requireRole('guard'), async (req, res) => {
     message: level === 'High' ? 'Access denied – high risk detected' : 'Visitor logged, OTP sent to resident' });
 });
 
-// PUT /api/visitors/:id/approve — admin or after OTP
-router.put('/:id/approve', verifyToken, requireRole('admin', 'guard'), async (req, res) => {
+// PUT /api/visitors/:id/approve — admin, guard, or the target resident
+router.put('/:id/approve', verifyToken, async (req, res) => {
+  // Residents can only approve visitors targeted at them
+  if (req.user.role === 'resident') {
+    const { data: v } = await supabaseAdmin.from('visitors').select('target_resident_id').eq('id', req.params.id).single();
+    if (v?.target_resident_id !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+  }
   const { data: visitor, error } = await supabaseAdmin.from('visitors')
     .update({ status: 'approved' }).eq('id', req.params.id).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, visitor });
 });
 
-// PUT /api/visitors/:id/deny
-router.put('/:id/deny', verifyToken, requireRole('admin', 'guard'), async (req, res) => {
+// PUT /api/visitors/:id/deny — admin, guard, or the target resident
+router.put('/:id/deny', verifyToken, async (req, res) => {
+  if (req.user.role === 'resident') {
+    const { data: v } = await supabaseAdmin.from('visitors').select('target_resident_id').eq('id', req.params.id).single();
+    if (v?.target_resident_id !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+  }
   const { data: visitor, error } = await supabaseAdmin.from('visitors')
     .update({ status: 'denied' }).eq('id', req.params.id).select().single();
   if (error) return res.status(500).json({ error: error.message });

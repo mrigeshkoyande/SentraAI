@@ -30,7 +30,7 @@ export default function GuardLogin() {
     setLocalError('');
     setSigningIn(true);
     try {
-      await loginWithGoogle();
+      await loginWithGoogle('guard');
     } catch (err) {
       if (err.code === 'auth/popup-closed-by-user') {
         setLocalError('Sign-in popup was closed. Please try again.');
@@ -44,7 +44,9 @@ export default function GuardLogin() {
 
   const displayError = localError ||
     (authError === 'no_user_record' ? 'Your Google account is not registered as a guard. Contact your administrator.' : '') ||
-    (authError === 'google_sign_in_failed' ? 'Google sign-in failed. Please try again.' : '');
+    (authError === 'google_sign_in_failed' ? 'Google sign-in failed. Please try again.' : '') ||
+    (authError === 'fetch_error' ? 'Could not connect to server. Make sure the server is running.' : '') ||
+    (authError ? `Error: ${authError}` : '');
 
   return (
     <div className="guard-login-page">

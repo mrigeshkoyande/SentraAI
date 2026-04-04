@@ -1,12 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Users, Bell, Shield, Clock, CheckCircle, XCircle, Eye,
-  Phone, MessageSquare, Key, Home, ArrowUpRight, Zap,
-  UserPlus, QrCode, RefreshCw, AlertTriangle, ChevronRight,
-  Star, Package, Wrench, Coffee
+  Key, Home, ArrowUpRight, Zap,
+  UserPlus, QrCode, RefreshCw, ChevronRight,
+  Package, Wrench, Coffee
 } from 'lucide-react';
-import { generateVisitors, generateAlerts, getTrustColor, VISITOR_PHOTOS, PURPOSES } from '../../data/mockData';
+import { getTrustColor } from '../../data/mockData';
+import { useAuth } from '../../context/AuthContext';
 import './ResidentDashboard.css';
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 const PURPOSE_ICONS = {
   'Package Delivery': Package,
@@ -20,73 +23,99 @@ const PURPOSE_ICONS = {
 };
 
 export default function ResidentDashboard({ user }) {
-  const userUnit = user?.unit || 'A-202';
+  const { getIdToken } = useAuth();
 
-  // Generate unit-specific visitors
-  const [allVisitors] = useState(() => generateVisitors(60));
-  const [allAlerts] = useState(() => generateAlerts(15));
-  const [pendingVisitors, setPendingVisitors] = useState([]);
-  const [recentVisitors, setRecentVisitors] = useState([]);
-  const [unitAlerts, setUnitAlerts] = useState([]);
+  // Derive unit display from user profile
+  const wing    = user?.b_wing_alphabet || '';
+  const flatNum = user?.flat_num || user?.b_num || '';
+  const userUnit = wing && flatNum ? `${wing}-${flatNum}` : flatNum || wing || '—';
+
+  const [visitors, setVisitors]     = useState([]);
+  const [alerts, setAlerts]         = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteForm, setInviteForm] = useState({ name: '', purpose: 'Guest Visit', date: '', phone: '' });
   const [sentInvites, setSentInvites] = useState([]);
   const [animatedStats, setAnimatedStats] = useState({ total: 0, pending: 0, approved: 0, alerts: 0 });
-  const [otpTarget, setOtpTarget] = useState(null);
+  const [otpTarget, setOtpTarget]   = useState(null);
   const [generatedOtp, setGeneratedOtp] = useState(null);
+  const [approvingId, setApprovingId] = useState(null);
 
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = await getIdToken();
+      const headers = { Authorization: `Bearer ${token}` };
+      const [visRes, altRes] = await Promise.all([
+        fetch(`${API}/api/visitors?limit=50`, { headers }),
+        fetch(`${API}/api/alerts`,           { headers }),
+      ]);
+      const visData = await visRes.json();
+      const altData = altRes.ok ? await altRes.json() : { alerts: [] };
+      setVisitors(visData.visitors || []);
+      setAlerts((altData.alerts || []).filter(a => !a.resolved).slice(0, 4));
+    } catch {}
+    setLoading(false);
+  }, [getIdToken]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Animate stats
   useEffect(() => {
-    const unitVisitors = allVisitors.filter(v => v.unit === userUnit);
-    const unitPending = unitVisitors.filter(v => v.status === 'pending').slice(0, 5);
-    const unitRecent = unitVisitors.filter(v => v.status === 'approved').slice(0, 6);
-    const relevantAlerts = allAlerts.filter(a => !a.resolved).slice(0, 4);
-
-    setPendingVisitors(unitPending);
-    setRecentVisitors(unitRecent);
-    setUnitAlerts(relevantAlerts);
-
-    const targets = {
-      total: unitVisitors.length,
-      pending: unitPending.length,
-      approved: unitRecent.length,
-      alerts: relevantAlerts.length,
-    };
-
-    let step = 0;
-    const steps = 35;
+    const pending  = visitors.filter(v => v.status === 'pending').length;
+    const approved = visitors.filter(v => v.status === 'approved').length;
+    const targets  = { total: visitors.length, pending, approved, alerts: alerts.length };
+    let step = 0; const steps = 35;
     const interval = setInterval(() => {
       step++;
-      const progress = step / steps;
-      const eased = 1 - Math.pow(1 - progress, 3);
+      const p = step / steps;
+      const e = 1 - Math.pow(1 - p, 3);
       setAnimatedStats({
-        total: Math.round(targets.total * eased),
-        pending: Math.round(targets.pending * eased),
-        approved: Math.round(targets.approved * eased),
-        alerts: Math.round(targets.alerts * eased),
+        total:    Math.round(targets.total * e),
+        pending:  Math.round(targets.pending * e),
+        approved: Math.round(targets.approved * e),
+        alerts:   Math.round(targets.alerts * e),
       });
       if (step >= steps) clearInterval(interval);
     }, 1200 / steps);
-
     return () => clearInterval(interval);
-  }, [allVisitors, allAlerts, userUnit]);
+  }, [visitors, alerts]);
 
-  const approveVisitor = (id) => {
-    setPendingVisitors(prev => prev.filter(v => v.id !== id));
-  };
+  const pendingVisitors = visitors.filter(v => v.status === 'pending').slice(0, 5);
+  const recentVisitors  = visitors.filter(v => v.status === 'approved' || v.status === 'exited').slice(0, 6);
 
-  const denyVisitor = (id) => {
-    setPendingVisitors(prev => prev.filter(v => v.id !== id));
-  };
+  const approveVisitor = useCallback(async (id) => {
+    setApprovingId(id);
+    try {
+      const token = await getIdToken();
+      await fetch(`${API}/api/visitors/${id}/approve`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setVisitors(prev => prev.map(v => v.id === id ? { ...v, status: 'approved' } : v));
+    } catch {}
+    setApprovingId(null);
+  }, [getIdToken]);
+
+  const denyVisitor = useCallback(async (id) => {
+    setApprovingId(id);
+    try {
+      const token = await getIdToken();
+      await fetch(`${API}/api/visitors/${id}/deny`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setVisitors(prev => prev.map(v => v.id === id ? { ...v, status: 'denied' } : v));
+    } catch {}
+    setApprovingId(null);
+  }, [getIdToken]);
 
   const sendInvite = () => {
     if (!inviteForm.name || !inviteForm.date) return;
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     setSentInvites(prev => [{
       id: 'INV-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
-      ...inviteForm,
-      otp,
-      status: 'pending',
-      sentAt: new Date().toISOString(),
+      ...inviteForm, otp, status: 'pending', sentAt: new Date().toISOString(),
     }, ...prev]);
     setInviteForm({ name: '', purpose: 'Guest Visit', date: '', phone: '' });
     setShowInviteModal(false);
@@ -99,10 +128,7 @@ export default function ResidentDashboard({ user }) {
   };
 
   const severityColor = {
-    critical: '#ef4444',
-    high: '#f87171',
-    medium: '#fbbf24',
-    low: '#60a5fa',
+    critical: '#ef4444', high: '#f87171', medium: '#fbbf24', low: '#60a5fa',
   };
 
   return (
@@ -112,7 +138,7 @@ export default function ResidentDashboard({ user }) {
         <div className="welcome-text">
           <div className="welcome-unit-badge">
             <Home size={14} />
-            Unit {userUnit}
+            {userUnit !== '—' ? `Unit ${userUnit}` : 'My Unit'}
           </div>
           <h2>Welcome back, <span>{user?.name?.split(' ')[0] || 'Resident'}</span></h2>
           <p>Here's your security overview for today</p>
@@ -125,6 +151,13 @@ export default function ResidentDashboard({ user }) {
           <button className="otp-quick-btn" onClick={() => generateOtp({ name: 'Quick OTP', id: 'quick' })} id="quick-otp-btn">
             <Key size={16} />
             Generate OTP
+          </button>
+          <button
+            onClick={fetchData}
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '0.6rem 0.85rem', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}
+            title="Refresh"
+          >
+            <RefreshCw size={15} className={loading ? 'spin' : ''} />
           </button>
         </div>
       </div>
@@ -166,7 +199,7 @@ export default function ResidentDashboard({ user }) {
 
       {/* Main Content Grid */}
       <div className="resident-grid">
-        {/* Pending Approvals — Full Width */}
+        {/* Pending Approvals */}
         <div className="res-card pending-card">
           <div className="res-card-header">
             <div>
@@ -178,7 +211,12 @@ export default function ResidentDashboard({ user }) {
             )}
           </div>
 
-          {pendingVisitors.length === 0 ? (
+          {loading ? (
+            <div className="res-empty-state">
+              <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite' }} />
+              <p>Loading…</p>
+            </div>
+          ) : pendingVisitors.length === 0 ? (
             <div className="res-empty-state">
               <Shield size={32} />
               <p>No pending approvals</p>
@@ -187,23 +225,32 @@ export default function ResidentDashboard({ user }) {
           ) : (
             <div className="pending-list">
               {pendingVisitors.map((v, i) => {
-                const trust = getTrustColor(v.trustLevel);
+                const trust = getTrustColor(v.trust_level);
                 const Icon = PURPOSE_ICONS[v.purpose] || Users;
+                const isActioning = approvingId === v.id;
                 return (
                   <div key={v.id} className="pending-item" style={{ animationDelay: `${i * 0.07}s` }}>
-                    <img src={v.photo} alt={v.name} className="pending-photo" />
+                    {v.photo_url ? (
+                      <img src={v.photo_url} alt={v.name} className="pending-photo" />
+                    ) : (
+                      <div className="pending-photo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(139,92,246,0.15)', color: '#a78bfa', fontSize: 18, fontWeight: 700 }}>
+                        {v.name?.[0]?.toUpperCase() || '?'}
+                      </div>
+                    )}
                     <div className="pending-info">
                       <span className="pending-name">{v.name}</span>
                       <div className="pending-meta">
                         <Icon size={12} />
-                        <span>{v.purpose}</span>
+                        <span>{v.purpose || '—'}</span>
                         <span className="meta-dot">•</span>
                         <Clock size={11} />
-                        <span>{new Date(v.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span>
+                          {new Date(v.entry_time || v.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       </div>
                     </div>
                     <div className="trust-chip" style={{ color: trust.color, background: trust.bg }}>
-                      {v.trustScore}
+                      {v.trust_score ?? '—'}
                     </div>
                     <div className="pending-actions">
                       <button
@@ -211,15 +258,17 @@ export default function ResidentDashboard({ user }) {
                         onClick={() => approveVisitor(v.id)}
                         id={`approve-${v.id}`}
                         title="Approve"
+                        disabled={isActioning}
                       >
-                        <CheckCircle size={16} />
-                        Approve
+                        {isActioning ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={16} />}
+                        {!isActioning && 'Approve'}
                       </button>
                       <button
                         className="quick-deny"
                         onClick={() => denyVisitor(v.id)}
                         id={`deny-${v.id}`}
                         title="Deny"
+                        disabled={isActioning}
                       >
                         <XCircle size={16} />
                       </button>
@@ -227,7 +276,7 @@ export default function ResidentDashboard({ user }) {
                         className="quick-otp"
                         onClick={() => generateOtp(v)}
                         id={`otp-${v.id}`}
-                        title="Send OTP"
+                        title="View OTP"
                       >
                         <Key size={14} />
                       </button>
@@ -244,46 +293,51 @@ export default function ResidentDashboard({ user }) {
           <div className="res-card-header">
             <div>
               <h3>Recent Visitors</h3>
-              <p>Past entries to Unit {userUnit}</p>
+              <p>Past entries to {userUnit !== '—' ? `Unit ${userUnit}` : 'your unit'}</p>
             </div>
             <button className="res-view-all" id="view-all-history">
               All <ChevronRight size={14} />
             </button>
           </div>
           <div className="recent-visitor-list">
-            {recentVisitors.map((v, i) => {
-              const trust = getTrustColor(v.trustLevel);
+            {!loading && recentVisitors.length === 0 ? (
+              <div className="res-empty-state small">
+                <Eye size={24} />
+                <p>No approved visitors yet</p>
+              </div>
+            ) : recentVisitors.map((v, i) => {
+              const trust = getTrustColor(v.trust_level);
               return (
                 <div key={v.id} className="recent-visitor-item" style={{ animationDelay: `${i * 0.06}s` }}>
-                  <img src={v.photo} alt={v.name} />
+                  {v.photo_url ? (
+                    <img src={v.photo_url} alt={v.name} />
+                  ) : (
+                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(52,211,153,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#34d399', fontSize: 15, fontWeight: 700, flexShrink: 0 }}>
+                      {v.name?.[0]?.toUpperCase() || '?'}
+                    </div>
+                  )}
                   <div className="rv-info">
                     <span className="rv-name">{v.name}</span>
-                    <span className="rv-purpose">{v.purpose}</span>
+                    <span className="rv-purpose">{v.purpose || '—'}</span>
                   </div>
                   <div className="rv-time">
-                    {new Date(v.entryTime).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                    {new Date(v.entry_time || v.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                   </div>
                   <div className="rv-trust" style={{ color: trust.color, background: trust.bg }}>
-                    {v.trustScore}
+                    {v.trust_score ?? '—'}
                   </div>
                 </div>
               );
             })}
-            {recentVisitors.length === 0 && (
-              <div className="res-empty-state small">
-                <Eye size={24} />
-                <p>No recent visitors</p>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Active Alerts for Resident */}
+        {/* Active Alerts */}
         <div className="res-card alerts-card">
           <div className="res-card-header">
             <div>
               <h3>Security Alerts</h3>
-              <p>Recent alerts near your unit</p>
+              <p>Recent unresolved alerts</p>
             </div>
             <div className="live-badge-sm">
               <span className="live-dot-sm" />
@@ -291,27 +345,25 @@ export default function ResidentDashboard({ user }) {
             </div>
           </div>
           <div className="res-alerts-list">
-            {unitAlerts.map((a, i) => (
-              <div key={a.id} className="res-alert-item" style={{ animationDelay: `${i * 0.08}s` }}>
-                <span className="res-alert-icon">{a.icon}</span>
-                <div className="res-alert-content">
-                  <span className="res-alert-title">{a.title}</span>
-                  <span className="res-alert-meta">{a.location} • {new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-                <div
-                  className="res-alert-severity"
-                  style={{ color: severityColor[a.severity] }}
-                >
-                  {a.severity}
-                </div>
-              </div>
-            ))}
-            {unitAlerts.length === 0 && (
+            {!loading && alerts.length === 0 ? (
               <div className="res-empty-state small">
                 <Shield size={24} />
                 <p>All clear — no active alerts</p>
               </div>
-            )}
+            ) : alerts.map((a, i) => (
+              <div key={a.id} className="res-alert-item" style={{ animationDelay: `${i * 0.08}s` }}>
+                <span className="res-alert-icon">{a.icon || '🔔'}</span>
+                <div className="res-alert-content">
+                  <span className="res-alert-title">{a.title}</span>
+                  <span className="res-alert-meta">
+                    {a.location || 'Premises'} • {new Date(a.created_at || a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className="res-alert-severity" style={{ color: severityColor[a.severity] }}>
+                  {a.severity}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -327,7 +379,6 @@ export default function ResidentDashboard({ user }) {
               New
             </button>
           </div>
-
           {sentInvites.length === 0 ? (
             <div className="res-empty-state">
               <QrCode size={32} />
@@ -368,22 +419,14 @@ export default function ResidentDashboard({ user }) {
             <div className="res-modal-body">
               <div className="res-form-group">
                 <label>Visitor Name *</label>
-                <input
-                  type="text"
-                  placeholder="Full name"
-                  value={inviteForm.name}
-                  onChange={e => setInviteForm({ ...inviteForm, name: e.target.value })}
-                  id="invite-name"
-                />
+                <input type="text" placeholder="Full name" value={inviteForm.name}
+                  onChange={e => setInviteForm({ ...inviteForm, name: e.target.value })} id="invite-name" />
               </div>
               <div className="res-form-group">
                 <label>Purpose</label>
-                <select
-                  value={inviteForm.purpose}
-                  onChange={e => setInviteForm({ ...inviteForm, purpose: e.target.value })}
-                  id="invite-purpose"
-                >
-                  {['Guest Visit', 'Package Delivery', 'Maintenance', 'Food Delivery', 'House Help', 'Medical Visit', 'Meeting'].map(p => (
+                <select value={inviteForm.purpose}
+                  onChange={e => setInviteForm({ ...inviteForm, purpose: e.target.value })} id="invite-purpose">
+                  {['Guest Visit','Package Delivery','Maintenance','Food Delivery','House Help','Medical Visit','Meeting'].map(p => (
                     <option key={p} value={p}>{p}</option>
                   ))}
                 </select>
@@ -391,22 +434,13 @@ export default function ResidentDashboard({ user }) {
               <div className="res-form-row">
                 <div className="res-form-group">
                   <label>Expected Date *</label>
-                  <input
-                    type="date"
-                    value={inviteForm.date}
-                    onChange={e => setInviteForm({ ...inviteForm, date: e.target.value })}
-                    id="invite-date"
-                  />
+                  <input type="date" value={inviteForm.date}
+                    onChange={e => setInviteForm({ ...inviteForm, date: e.target.value })} id="invite-date" />
                 </div>
                 <div className="res-form-group">
                   <label>Phone (optional)</label>
-                  <input
-                    type="tel"
-                    placeholder="+91 XXXXXXXXXX"
-                    value={inviteForm.phone}
-                    onChange={e => setInviteForm({ ...inviteForm, phone: e.target.value })}
-                    id="invite-phone"
-                  />
+                  <input type="tel" placeholder="+91 XXXXXXXXXX" value={inviteForm.phone}
+                    onChange={e => setInviteForm({ ...inviteForm, phone: e.target.value })} id="invite-phone" />
                 </div>
               </div>
             </div>
@@ -444,10 +478,7 @@ export default function ResidentDashboard({ user }) {
               </p>
             </div>
             <div className="res-modal-footer">
-              <button
-                className="res-submit-btn"
-                onClick={() => { setGeneratedOtp(null); setOtpTarget(null); }}
-              >
+              <button className="res-submit-btn" onClick={() => { setGeneratedOtp(null); setOtpTarget(null); }}>
                 Done
               </button>
             </div>

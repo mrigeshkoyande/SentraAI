@@ -1,17 +1,19 @@
 import { Search, Shield, Menu, X, AlertTriangle, User } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
-import { generateAlerts, generateVisitors } from '../data/mockData';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 import NotificationPanel from './NotificationPanel';
 import './Header.css';
 
-const mockAlerts   = generateAlerts(8);
-const mockVisitors = generateVisitors(10);
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 export default function Header({ onMenuClick, title, subtitle, role }) {
+  const { getIdToken } = useAuth();
   const [searchOpen, setSearchOpen]     = useState(false);
   const [searchQuery, setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState([]);
-  const searchRef = useRef(null);
+  const [searching, setSearching]       = useState(false);
+  const searchRef  = useRef(null);
+  const debounceId = useRef(null);
 
   // Close search on outside click
   useEffect(() => {
@@ -26,23 +28,36 @@ export default function Header({ onMenuClick, title, subtitle, role }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleSearch = (query) => {
+  const handleSearch = useCallback((query) => {
     setSearchQuery(query);
     if (!query.trim()) { setSearchResults([]); return; }
-    const q = query.toLowerCase();
 
-    const visitorResults = mockVisitors
-      .filter(v => v.name.toLowerCase().includes(q) || v.purpose.toLowerCase().includes(q))
-      .slice(0, 3)
-      .map(v => ({ type: 'visitor', label: v.name, sub: v.purpose, id: v.id }));
-
-    const alertResults = mockAlerts
-      .filter(a => a.title.toLowerCase().includes(q) || a.visitor.toLowerCase().includes(q))
-      .slice(0, 3)
-      .map(a => ({ type: 'alert', label: a.title, sub: a.visitor, id: a.id }));
-
-    setSearchResults(role === 'resident' ? alertResults : [...visitorResults, ...alertResults]);
-  };
+    // Debounce backend search by 350ms
+    clearTimeout(debounceId.current);
+    debounceId.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const token = await getIdToken();
+        const res = await fetch(
+          `${API}/api/visitors?search=${encodeURIComponent(query)}&limit=5`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await res.json();
+        const visitors = (data.visitors || []).map(v => ({
+          type: 'visitor',
+          label: v.name,
+          sub: `${v.purpose || '—'} → ${v.target_flat || '—'}`,
+          id: v.id,
+        }));
+        setSearchResults(visitors);
+      } catch {
+        // Fallback: show nothing if server is unreachable
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+  }, [getIdToken]);
 
   return (
     <header className="app-header">
@@ -59,10 +74,10 @@ export default function Header({ onMenuClick, title, subtitle, role }) {
       <div className="header-right">
         {/* Search */}
         <div className={`header-search ${searchOpen ? 'open' : ''}`} ref={searchRef}>
-          <Search size={16} className="search-icon" />
+          <Search size={16} className="search-icon" style={{ opacity: searching ? 0.5 : 1, transition: 'opacity 0.2s' }} />
           <input
             type="text"
-            placeholder="Search visitors, alerts..."
+            placeholder="Search visitors..."
             value={searchQuery}
             onChange={e => handleSearch(e.target.value)}
             className="search-input"
@@ -87,6 +102,13 @@ export default function Header({ onMenuClick, title, subtitle, role }) {
                   <span className="search-result-type">{r.type}</span>
                 </div>
               ))}
+            </div>
+          )}
+          {searching && searchQuery && searchResults.length === 0 && (
+            <div className="search-results-dropdown">
+              <div className="search-result-item" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', padding: '0.75rem 1rem' }}>
+                Searching…
+              </div>
             </div>
           )}
         </div>

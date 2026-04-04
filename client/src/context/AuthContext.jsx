@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
       setAuthError(null);
       if (fbUser) {
         setFirebaseUser(fbUser);
-        await loadProfile(fbUser.uid, fbUser.email);
+        await loadProfile(fbUser);
       } else {
         setFirebaseUser(null);
         setProfile(null);
@@ -27,22 +27,30 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
-  // Fetch user profile + role from Supabase
-  const loadProfile = async (uid, email) => {
+  // Fetch user profile + role from Backend API (Syncs / registers user)
+  const loadProfile = async (fbUser, intendedRole = 'resident') => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('firebase_uid', uid)
-        .single();
-
-      if (error || !data) {
-        // User signed in with Google but has no Supabase record (not provisioned by admin)
+      const token = await fbUser.getIdToken();
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const response = await fetch(`${apiUrl}/api/auth/profile`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          photoURL: fbUser.photoURL || null,
+          displayName: fbUser.displayName || null,
+          intendedRole,
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.user) {
         setProfile(null);
-        setAuthError('no_user_record');
+        setAuthError(data.error || 'no_user_record');
       } else {
-        setProfile(data);
+        setProfile(data.user);
       }
     } catch (e) {
       setProfile(null);
@@ -52,15 +60,15 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Google sign-in — role passed to route the user after login
-  const loginWithGoogle = async () => {
+  // Google sign-in — intendedRole tells backend which role to assign new users
+  const loginWithGoogle = async (intendedRole = 'resident') => {
     setAuthError(null);
     setLoading(true);
     try {
       const result = await signInWithGoogle();
       const fbUser = result.user;
       setFirebaseUser(fbUser);
-      await loadProfile(fbUser.uid, fbUser.email);
+      await loadProfile(fbUser, intendedRole);
     } catch (err) {
       setAuthError('google_sign_in_failed');
       setLoading(false);
@@ -74,10 +82,10 @@ export function AuthProvider({ children }) {
     setProfile(null);
   };
 
-  // Refresh profile from Supabase (after admin updates info)
+  // Refresh profile
   const refreshProfile = async () => {
     if (firebaseUser) {
-      await loadProfile(firebaseUser.uid, firebaseUser.email);
+      await loadProfile(firebaseUser, profile?.role || 'resident');
     }
   };
 

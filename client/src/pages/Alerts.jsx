@@ -1,77 +1,96 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Bell, AlertTriangle, Shield, CheckCircle, XCircle, Clock,
-  MapPin, User, Filter, BellRing, AlertOctagon, Volume2, RefreshCw
+  MapPin, User, BellRing, AlertOctagon, Volume2, RefreshCw, WifiOff
 } from 'lucide-react';
-import { generateAlerts } from '../data/mockData';
+import { useAuth } from '../context/AuthContext';
 import './Alerts.css';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
 export default function Alerts({ userUnit }) {
-  const [alerts, setAlerts] = useState(() => {
-    const all = generateAlerts(20);
-    if (userUnit) {
-      // Residents see alerts from non-gate locations (Lobby, Parking, Building C)
-      // plus any unresolved alerts that are unit-relevant
-      const residentLocations = ['Lobby', 'Parking', 'Building C Entry'];
-      const unitAlerts = all.filter(a => residentLocations.includes(a.location) || !a.resolved);
-      // Seed with a few unit-specific ones and limit to 8
-      return unitAlerts.slice(0, 8);
-    }
-    return all;
-  });
+  const { getIdToken } = useAuth();
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all');
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [emergencyModalOpen, setEmergencyModalOpen] = useState(false);
+  const [emergencyLoading, setEmergencyLoading] = useState(false);
+  const [emergencyResult, setEmergencyResult] = useState(null); // { ok, msg }
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
 
-  // Simulate live polling — increment time display every 30s
+  const SEVERITY_ICONS = {
+    '⚠️': '⚠️', '🚫': '🚫', '🔍': '🔍', '🚨': '🚨',
+    '🔄': '🔄', '🎭': '🎭', '👥': '👥', '⏰': '⏰', default: '🔔'
+  };
+
+  const fetchAlerts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const res = await fetch(`${API}/api/alerts`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setAlerts(data.alerts || []);
+      setLastUpdated(new Date());
+    } catch {
+      setError('Could not reach server.');
+    } finally {
+      setLoading(false);
+    }
+  }, [getIdToken]);
+
+  useEffect(() => { fetchAlerts(); }, [fetchAlerts]);
+
+  // Auto-refresh every 30 seconds for "live" feel
   useEffect(() => {
     const id = setInterval(() => setLastUpdated(new Date()), 30000);
     return () => clearInterval(id);
   }, []);
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => {
-      // Re-generate a fresh batch to simulate new data arriving
-      const all = generateAlerts(20);
-      setAlerts(userUnit
-        ? all.filter(a => ['Lobby', 'Parking', 'Building C Entry'].includes(a.location) || !a.resolved).slice(0, 8)
-        : all
-      );
-      setLastUpdated(new Date());
-      setRefreshing(false);
-    }, 600);
-  }, [userUnit]);
-
-  const severityConfig = {
-    critical: { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', label: 'CRITICAL', icon: <AlertOctagon size={14} /> },
-    high: { color: '#f87171', bg: 'rgba(248, 113, 113, 0.1)', label: 'HIGH', icon: <AlertTriangle size={14} /> },
-    medium: { color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.1)', label: 'MEDIUM', icon: <Shield size={14} /> },
-    low: { color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.1)', label: 'LOW', icon: <Bell size={14} /> },
+    fetchAlerts().finally(() => setRefreshing(false));
   };
 
-  const filtered = filter === 'all' ? alerts :
-    filter === 'unread' ? alerts.filter(a => !a.read) :
+  const severityConfig = {
+    critical: { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)',  label: 'CRITICAL', icon: <AlertOctagon size={14} /> },
+    high:     { color: '#f87171', bg: 'rgba(248, 113, 113, 0.1)', label: 'HIGH',     icon: <AlertTriangle size={14} /> },
+    medium:   { color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.1)', label: 'MEDIUM',   icon: <Shield size={14} /> },
+    low:      { color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.1)', label: 'LOW',      icon: <Bell size={14} /> },
+  };
+
+  const filtered = filter === 'all'      ? alerts :
+    filter === 'unread'   ? alerts.filter(a => !a.read) :
     filter === 'resolved' ? alerts.filter(a => a.resolved) :
     alerts.filter(a => a.severity === filter);
 
-  const unreadCount = alerts.filter(a => !a.read).length;
+  const unreadCount   = alerts.filter(a => !a.read).length;
   const criticalCount = alerts.filter(a => a.severity === 'critical' && !a.resolved).length;
 
-  const markAsRead = (id) => {
+  const markAsRead = async (id) => {
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, read: true } : a));
+    // persist to backend
+    try {
+      const token = await getIdToken();
+      await fetch(`${API}/api/alerts/${id}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
+    } catch {}
   };
 
-  const resolveAlert = (id) => {
+  const resolveAlert = async (id) => {
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, resolved: true, read: true } : a));
     setSelectedAlert(null);
+    try {
+      const token = await getIdToken();
+      await fetch(`${API}/api/alerts/${id}/resolve`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
+    } catch {}
   };
 
-  const markAllRead = () => {
-    setAlerts(prev => prev.map(a => ({ ...a, read: true })));
-  };
+  const markAllRead = () => setAlerts(prev => prev.map(a => ({ ...a, read: true })));
 
   return (
     <div className="alerts-page">
@@ -103,10 +122,8 @@ export default function Alerts({ userUnit }) {
         </div>
         <div className="alerts-actions">
           <button
-            className="mark-read-btn"
-            onClick={handleRefresh}
+            className="mark-read-btn" onClick={handleRefresh}
             id="refresh-alerts-btn"
-            title="Refresh alerts"
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
           >
             <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
@@ -116,11 +133,7 @@ export default function Alerts({ userUnit }) {
             <CheckCircle size={14} />
             Mark All Read
           </button>
-          <button
-            className="emergency-btn"
-            onClick={() => setEmergencyModalOpen(true)}
-            id="emergency-alert-btn"
-          >
+          <button className="emergency-btn" onClick={() => setEmergencyModalOpen(true)} id="emergency-alert-btn">
             <Volume2 size={16} />
             Emergency Alert
           </button>
@@ -142,18 +155,35 @@ export default function Alerts({ userUnit }) {
         ))}
       </div>
 
+      {/* Error State */}
+      {error && (
+        <div style={{ textAlign:'center', padding:'3rem', color:'#f87171' }}>
+          <WifiOff size={36} style={{ marginBottom: 8 }} />
+          <p>{error}</p>
+          <button onClick={fetchAlerts} style={{ marginTop: 12, padding:'8px 20px', borderRadius:8, background:'rgba(139,92,246,0.2)', border:'1px solid rgba(139,92,246,0.3)', color:'#a78bfa', cursor:'pointer' }}>
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Alert List */}
       <div className="alerts-layout">
         <div className="alerts-list">
-          {filtered.length === 0 && (
+          {loading && (
+            <div style={{ textAlign:'center', padding:'3rem', color:'rgba(255,255,255,0.4)' }}>
+              <RefreshCw size={28} style={{ animation:'spin 1s linear infinite', marginBottom: 8 }} />
+              <p>Loading alerts…</p>
+            </div>
+          )}
+          {!loading && !error && filtered.length === 0 && (
             <div className="no-alerts">
               <Shield size={40} />
               <h3>All Clear</h3>
-              <p>No alerts matching your filter</p>
+              <p>No security alerts at the moment</p>
             </div>
           )}
-          {filtered.map((alert, i) => {
-            const sev = severityConfig[alert.severity];
+          {!loading && filtered.map((alert, i) => {
+            const sev = severityConfig[alert.severity] || severityConfig.low;
             return (
               <div
                 key={alert.id}
@@ -163,7 +193,7 @@ export default function Alerts({ userUnit }) {
               >
                 <div className="alert-icon-col" style={{ color: sev.color }}>
                   <div className="alert-icon-bg" style={{ background: sev.bg }}>
-                    {alert.icon}
+                    {alert.icon || sev.icon}
                   </div>
                 </div>
 
@@ -173,13 +203,12 @@ export default function Alerts({ userUnit }) {
                     {!alert.read && <span className="unread-dot" />}
                   </div>
                   <p className="alert-meta">
-                    <User size={11} /> {alert.visitor}
-                    <span className="meta-sep">•</span>
-                    <MapPin size={11} /> {alert.location}
+                    {alert.visitor_id && <><User size={11} /> Visitor Alert<span className="meta-sep">•</span></>}
+                    <MapPin size={11} /> {alert.location || 'Main Gate'}
                   </p>
                   <span className="alert-time">
                     <Clock size={11} />
-                    {new Date(alert.timestamp).toLocaleString([], {
+                    {new Date(alert.created_at || alert.timestamp).toLocaleString([], {
                       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                     })}
                   </span>
@@ -205,37 +234,35 @@ export default function Alerts({ userUnit }) {
         {selectedAlert && (
           <div className="alert-detail-panel animate-fade-in">
             <div className="alert-detail-header" style={{
-              background: severityConfig[selectedAlert.severity].bg,
-              borderLeft: `4px solid ${severityConfig[selectedAlert.severity].color}`
+              background: (severityConfig[selectedAlert.severity] || severityConfig.low).bg,
+              borderLeft: `4px solid ${(severityConfig[selectedAlert.severity] || severityConfig.low).color}`
             }}>
-              <span className="alert-detail-icon" style={{ fontSize: '28px' }}>{selectedAlert.icon}</span>
+              <span className="alert-detail-icon" style={{ fontSize: '28px' }}>
+                {selectedAlert.icon || '🔔'}
+              </span>
               <div>
                 <h3>{selectedAlert.title}</h3>
                 <span className="severity-badge" style={{
-                  color: severityConfig[selectedAlert.severity].color,
+                  color: (severityConfig[selectedAlert.severity] || severityConfig.low).color,
                   background: 'rgba(0,0,0,0.2)'
                 }}>
-                  {severityConfig[selectedAlert.severity].label}
+                  {(severityConfig[selectedAlert.severity] || severityConfig.low).label}
                 </span>
               </div>
             </div>
 
             <div className="alert-detail-body">
               <div className="alert-detail-field">
-                <span><User size={13} /> Visitor</span>
-                <strong>{selectedAlert.visitor}</strong>
-              </div>
-              <div className="alert-detail-field">
                 <span><MapPin size={13} /> Location</span>
-                <strong>{selectedAlert.location}</strong>
+                <strong>{selectedAlert.location || 'Main Gate'}</strong>
               </div>
               <div className="alert-detail-field">
                 <span><Clock size={13} /> Time</span>
-                <strong>{new Date(selectedAlert.timestamp).toLocaleString()}</strong>
+                <strong>{new Date(selectedAlert.created_at || selectedAlert.timestamp).toLocaleString()}</strong>
               </div>
               <div className="alert-detail-field">
                 <span><Shield size={13} /> Type</span>
-                <strong>{selectedAlert.type.replace(/_/g, ' ')}</strong>
+                <strong>{(selectedAlert.type || '').replace(/_/g, ' ')}</strong>
               </div>
               <div className="alert-detail-field">
                 <span><Bell size={13} /> Status</span>
@@ -253,7 +280,18 @@ export default function Alerts({ userUnit }) {
                   <CheckCircle size={16} />
                   Mark as Resolved
                 </button>
-                <button className="escalate-btn" id="escalate-alert-btn" onClick={() => alert('Alert escalated to admin!')}>
+                <button className="escalate-btn" id="escalate-alert-btn"
+                  onClick={async () => {
+                    try {
+                      const token = await getIdToken();
+                      await fetch(`${API}/api/alerts/emergency`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ location: selectedAlert.location || 'Main Gate' }),
+                      });
+                      fetchAlerts();
+                    } catch {}
+                  }}>
                   <AlertTriangle size={16} />
                   Escalate
                 </button>
@@ -265,28 +303,55 @@ export default function Alerts({ userUnit }) {
 
       {/* Emergency Modal */}
       {emergencyModalOpen && (
-        <div className="emergency-overlay" onClick={() => setEmergencyModalOpen(false)}>
+        <div className="emergency-overlay" onClick={() => { if (!emergencyLoading) { setEmergencyModalOpen(false); setEmergencyResult(null); } }}>
           <div className="emergency-modal animate-fade-in-up" onClick={e => e.stopPropagation()}>
             <div className="emergency-modal-icon">
               <AlertOctagon size={48} />
             </div>
             <h2>Trigger Emergency Alert</h2>
             <p>This will send an immediate alert to all security personnel and lock down all entry points.</p>
+            {emergencyResult && (
+              <p style={{ color: emergencyResult.ok ? '#34d399' : '#f87171', fontWeight: 600, margin: '0.5rem 0' }}>
+                {emergencyResult.msg}
+              </p>
+            )}
             <div className="emergency-modal-actions">
-              <button
-                className="emergency-confirm"
-                onClick={() => { setEmergencyModalOpen(false); alert('🚨 Emergency alert triggered! All security notified.'); }}
-                id="confirm-emergency"
-              >
-                <Volume2 size={18} />
-                Confirm Emergency
-              </button>
-              <button
-                className="emergency-cancel"
-                onClick={() => setEmergencyModalOpen(false)}
-                id="cancel-emergency"
-              >
-                Cancel
+              {!emergencyResult?.ok && (
+                <button
+                  className="emergency-confirm"
+                  disabled={emergencyLoading}
+                  onClick={async () => {
+                    setEmergencyLoading(true);
+                    setEmergencyResult(null);
+                    try {
+                      const token = await getIdToken();
+                      const res = await fetch(`${API}/api/alerts/emergency`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ location: 'All Zones' }),
+                      });
+                      if (res.ok) {
+                        setEmergencyResult({ ok: true, msg: '🚨 Emergency alert triggered! All security notified.' });
+                        fetchAlerts();
+                        setTimeout(() => { setEmergencyModalOpen(false); setEmergencyResult(null); }, 2000);
+                      } else {
+                        const d = await res.json();
+                        setEmergencyResult({ ok: false, msg: d.error || 'Failed to trigger emergency.' });
+                      }
+                    } catch {
+                      setEmergencyResult({ ok: false, msg: 'Server unreachable.' });
+                    } finally {
+                      setEmergencyLoading(false);
+                    }
+                  }}
+                  id="confirm-emergency"
+                >
+                  <Volume2 size={18} />
+                  {emergencyLoading ? 'Sending…' : 'Confirm Emergency'}
+                </button>
+              )}
+              <button className="emergency-cancel" onClick={() => { setEmergencyModalOpen(false); setEmergencyResult(null); }} id="cancel-emergency">
+                {emergencyResult?.ok ? 'Close' : 'Cancel'}
               </button>
             </div>
           </div>
