@@ -108,7 +108,7 @@ router.get('/otps', verifyToken, requireRole('admin'), async (req, res) => {
   res.json({ otps: data });
 });
 
-// GET /api/admin/dashboard — summary stats
+// GET /api/admin/dashboard — legacy route for backward compat
 router.get('/dashboard', verifyToken, requireRole('admin'), async (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const [visitors, alerts, pending, users] = await Promise.all([
@@ -123,6 +123,44 @@ router.get('/dashboard', verifyToken, requireRole('admin'), async (req, res) => 
     pendingApprovals: pending.count || 0,
     activeUsers: users.count || 0,
   });
+});
+
+// GET /api/admin/stats — unified dashboard stats (used by new Dashboard.jsx)
+router.get('/stats', verifyToken, async (req, res) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayISO = today.toISOString();
+
+  try {
+    const [totalRes, todayRes, alertsRes, pendingRes] = await Promise.all([
+      supabaseAdmin.from('visitors').select('id', { count: 'exact', head: true }),
+      supabaseAdmin.from('visitors').select('id', { count: 'exact', head: true }).gte('entry_time', todayISO),
+      supabaseAdmin.from('alerts').select('id', { count: 'exact', head: true }).eq('resolved', false),
+      supabaseAdmin.from('visitors').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+    ]);
+    res.json({
+      stats: {
+        total_visitors:    totalRes.count   || 0,
+        today_visitors:    todayRes.count   || 0,
+        active_alerts:     alertsRes.count  || 0,
+        pending_approvals: pendingRes.count || 0,
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/residents — list of all residents (for guard visitor form dropdown)
+router.get('/residents', verifyToken, requireRole('admin', 'guard'), async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .select('id, name, email, flat_num, b_num, b_wing_alphabet, b_floor_num')
+    .eq('role', 'resident')
+    .eq('status', 'active')
+    .order('name');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ residents: data });
 });
 
 // GET/POST/DELETE /api/admin/blacklist
